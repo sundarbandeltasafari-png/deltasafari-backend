@@ -1,6 +1,6 @@
 const express = require('express');
 const { adminAuthMiddleWare } = require('../../middleware/middleware');
-const { getAllPackageType, createPackage, getAllPackages, getParticularPackage, editPackage } = require('../../controller/admin/package/adminPackageController');
+const { getAllPackageType, createPackage, getAllPackages, getParticularPackage, editPackage, deletePackage } = require('../../controller/admin/package/adminPackageController');
 const { createUploader } = require('../../helper/uploadHelper');
 const validateSchema = require('../../middleware/validateSchema');
 const { tourValidationSchema } = require('../../schema/packageSchema');
@@ -19,5 +19,6 @@ router.route('/editParticularPackage').post(adminAuthMiddleWare, validateSchema(
     { name: 'images[]', maxCount: 15 },
     { name: 'videos[]', maxCount: 5 }
 ]), editPackage);
+router.route('/deletePackage').delete(adminAuthMiddleWare, deletePackage);
 
 module.exports = router;

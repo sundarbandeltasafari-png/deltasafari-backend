@@ -175,7 +175,7 @@ function getUserStatusModel(condition) {
 
 function getSearchUsersModel(condition, searchData) {
     const customcondition = buildCondition(condition, false)
-    console.log(`SELECT * FROM user_master ${customcondition} AND WHERE user_master.first_name LIKE %${searchData}% OR ${customcondition} AND WHERE user_master.last_name LIKE %${searchData}% ORDER BY id DESC`)
+    // console.log(`SELECT * FROM user_master ${customcondition} AND WHERE user_master.first_name LIKE %${searchData}% OR ${customcondition} AND WHERE user_master.last_name LIKE %${searchData}% ORDER BY id DESC`)
     return new Promise((resolve, reject) => {
         connection.query(`SELECT * FROM user_master WHERE ${customcondition} AND  user_master.first_name LIKE '%${searchData}%' OR ${customcondition} AND user_master.last_name LIKE '%${searchData}%' ORDER BY id DESC`, (err, rows) => {
             if (err) {

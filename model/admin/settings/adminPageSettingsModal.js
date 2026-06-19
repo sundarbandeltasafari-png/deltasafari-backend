@@ -138,6 +138,55 @@ function deleteSeoPageSettingsModel(condition) {
     })
 }
 
+function getCommonPageModel(condition) {
+    const customcondition = buildCondition(condition);
+    return new Promise((resolve, reject) => {
+        connection.query(`SELECT common_page.*, page_master.page_name FROM page_master LEFT JOIN common_page ON page_master.id = common_page.page_id ${customcondition}`, [condition], (err, rows) => {
+            if (err) {
+                reject(new Error("Something went worng in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    })
+}
+
+function createCommonPageSettingsModel(faqdata) {
+    return new Promise((resolve, reject) => {
+        connection.query('INSERT INTO common_page SET ?', faqdata, (err, rows) => {
+            if (err) {
+                reject(new Error("Something went worng in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+
+    })
+}
+
+function deleteCommonPageSettingsModel(condition) {
+    const customcondition = buildCondition(condition)
+    return new Promise((resolve, reject) => {
+        connection.query(`DELETE FROM common_page ${customcondition}`, (err, rows) => {
+            if (err) {
+                reject(new Error("Something went worng in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    })
+}
+
+
 
 function getOfficeAddressModel() {
     return new Promise((resolve, reject) => {
@@ -237,5 +286,8 @@ module.exports= {
     getContactChanelModel,
     createOfficeAddressModel,
     deleteOfficeAddressModel,
-    setContactChanelModel
+    setContactChanelModel,
+    getCommonPageModel,
+    createCommonPageSettingsModel,
+    deleteCommonPageSettingsModel
 }

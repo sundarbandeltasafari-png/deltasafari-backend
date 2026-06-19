@@ -4,13 +4,15 @@ const slugify = require('slugify');
 const { urlDecode } = require('../../../helper/urlHelper');
 const { deleteFile } = require('../../../helper/deleteHelper');
 const { getParticularSiteSettingsModel, setSiteSettingsModel } = require('../../../model/admin/settings/adminSiteSettingsModel');
-const { getPagesModel, getFaqPageModel, deleteFaqPageSettingsModel, createFaqPageSettingsModel, getSeoPageModel, createSeoPageSettingsModel, deleteSeoPageSettingsModel, getOfficeAddressModel, getContactChanelModel, setContactChanelModel, createOfficeAddressModel, deleteOfficeAddressModel } = require('../../../model/admin/settings/adminPageSettingsModal');
+const { getPagesModel, getFaqPageModel, deleteFaqPageSettingsModel, createFaqPageSettingsModel, getSeoPageModel, createSeoPageSettingsModel, deleteSeoPageSettingsModel, getOfficeAddressModel, getContactChanelModel, setContactChanelModel, createOfficeAddressModel, deleteOfficeAddressModel, getCommonPageModel, deleteCommonPageSettingsModel, createCommonPageSettingsModel } = require('../../../model/admin/settings/adminPageSettingsModal');
+const { contents } = require('cheerio/lib/api/traversing');
 
 
 const getAllPages = asyncHandler(async (req, res, next) => {
     try {
         const pages = await getPagesModel({ is_active: 1, type: req?.body?.type });
-        return res.status(200).json({ status: true, msg: 'All Page master details.', pages: pages })
+        const faqPage = await getPagesModel({ is_active: 1, id: 8 });
+        return res.status(200).json({ status: true, msg: 'All Page master details.', pages: [...pages, faqPage[0]] })
     } catch (error) {
         next(error)
     }
@@ -120,7 +122,7 @@ const setSeoPageSettings = asyncHandler(async (req, res, next) => {
     try {
         const data = req.body;
         if (!data) {
-            return res.status(400).json({ status: false, msg: 'Faq page is not updated. Please add required fields' });
+            return res.status(400).json({ status: false, msg: 'Page is not updated. Please add required fields' });
         }
 
         await deleteSeoPageSettingsModel({ page_id: urlDecode(data?.page_id) });
@@ -137,6 +139,40 @@ const setSeoPageSettings = asyncHandler(async (req, res, next) => {
             return res.status(400).json({ status: false, msg: 'SEO page is not updated. Please add required fields' });
         }
         return res.status(200).json({ status: true, msg: 'SEO page has been created successfully.' })
+    } catch (error) {
+        next(error)
+    }
+})
+
+const getCommonPage = asyncHandler(async (req, res, next) => {
+    try {
+        const commonpage = await getCommonPageModel({ 'page_master.id': req?.body?.page_id });
+        return res.status(200).json({ status: true, msg: 'All Page master details.', commonpage: commonpage.length > 0 ? commonpage[0] : null });
+    } catch (error) {
+        next(error);
+    }
+})
+
+const setCommonPageSettings = asyncHandler(async (req, res, next) => {
+    try {
+        const data = req.body;
+        if (!data) {
+            return res.status(400).json({ status: false, msg: 'Page is not updated. Please add required fields' });
+        }
+
+        await deleteCommonPageSettingsModel({ page_id: urlDecode(data?.page_id) });
+        const payload = {
+            title: data?.title,
+            display_order: data?.display_order,
+            content: data?.content,
+            page_id: urlDecode(data?.page_id)
+        }
+        const response = await createCommonPageSettingsModel(payload);
+
+        if (!response) {
+            return res.status(400).json({ status: false, msg: 'Page is not updated. Please add required fields' });
+        }
+        return res.status(200).json({ status: true, msg: 'Page has been created successfully.' })
     } catch (error) {
         next(error)
     }
@@ -213,5 +249,7 @@ module.exports = {
     getAllOfficeAddress,
     setContactChanel,
     createOfficeAddress,
-    deleteOfficeAddress
+    deleteOfficeAddress,
+    getCommonPage,
+    setCommonPageSettings
 }

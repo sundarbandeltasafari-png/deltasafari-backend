@@ -43,7 +43,7 @@ function getParticularPostsModel(condition) {
             }
             if (rows) {
                 const newRows = JSON.parse(JSON.stringify(rows))
-                resolve(newRows.length > 0 ? newRows[0] : []);
+                resolve(newRows.length > 0 ? newRows[0] : null);
             } else {
                 resolve([]);
             }

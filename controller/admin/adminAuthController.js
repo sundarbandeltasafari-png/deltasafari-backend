@@ -6,21 +6,15 @@ const { sendOtp } = require('../../helper/serviceHelper');
 
 const login = asyncHandler(async (req, res, next) => {
     try {
-        
         var user = [req?.user]
         if (!req?.user) {
             const body = req?.body
-            try {
-                user = await getLoginUser(body?.email, md5(body?.password));
-            } catch (err) {
-                const error = new Error('User credentials is not valid.');
-                res.status(401);
-                next(error);
-            }
+            user = await getLoginUser(body?.email, md5(body?.password));
         }
+        console.log(user)
         if (user.length == 0) {
             const error = new Error('User credentials is not valid.');
-            res.status(401);
+            // res.status(401);
             next(error);
         }
         const userDetails = { ...user[0], password: '' }

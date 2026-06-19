@@ -208,6 +208,22 @@ function getAllPackagePoliciesModel(condition) {
     })
 }
 
+function deletePackageModel(condition) {
+    const customcondition = buildCondition(condition)
+    return new Promise((resolve, reject) => {
+        connection.query(`DELETE FROM packages_master ${customcondition}`, (err, rows) => {
+            if (err) {
+                reject(new Error("Something went worng in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    })
+}
+
 function deleteItinerariesModel(condition) {
     const customcondition = buildCondition(condition)
     return new Promise((resolve, reject) => {
@@ -271,5 +287,6 @@ module.exports = {
     getAllPackageAssetsModel,
     deleteItinerariesModel,
     deletePoliciesModel,
-    deleteAssets
+    deleteAssets,
+    deletePackageModel
 }

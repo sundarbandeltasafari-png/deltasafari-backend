@@ -1,6 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const md5 = require('md5');
-const { getAllPackageTypesModel, createPackageModel, createPackageAssetsModel, createPackageItinerariesModel, createPackagePoliciesModel, getAllPackageModel, getAllPackageItinerariesModel, getAllPackageAssetsModel, getAllPackagePoliciesModel, setPackageModel, getParticularPackageModel, deletePoliciesModel, deleteItinerariesModel, deleteAssets } = require('../../../model/admin/package/adminPackageModel');
+const { getAllPackageTypesModel, createPackageModel, createPackageAssetsModel, createPackageItinerariesModel, createPackagePoliciesModel, getAllPackageModel, getAllPackageItinerariesModel, getAllPackageAssetsModel, getAllPackagePoliciesModel, setPackageModel, getParticularPackageModel, deletePoliciesModel, deleteItinerariesModel, deleteAssets, deletePackageModel } = require('../../../model/admin/package/adminPackageModel');
 const slugify = require('slugify');
 const { urlDecode } = require('../../../helper/urlHelper');
 const { deleteFile } = require('../../../helper/deleteHelper');
@@ -33,6 +33,7 @@ const createPackage = asyncHandler(async (req, res, next) => {
             duration_nights: body?.duration_nights,
             base_price: body?.base_price,
             discount: body?.discount,
+            discount_type: body?.discount_type,
             actual_price: body?.actual_price,
             package_type: body?.category,
             inclusions: JSON.stringify(body?.inclusions),
@@ -126,6 +127,7 @@ const editPackage = asyncHandler(async (req, res, next) => {
             duration_nights: body?.duration_nights,
             base_price: body?.base_price,
             discount: body?.discount,
+            discount_type: body?.discount_type,
             actual_price: body?.actual_price,
             package_type: body?.category,
             inclusions: JSON.stringify(body?.inclusions),
@@ -168,7 +170,7 @@ const editPackage = asyncHandler(async (req, res, next) => {
             return await createPackagePoliciesModel(policies);
         }))
 
-        Promise.all(body?.delAssets?.map(async (delAsset) => {
+        body?.delAssets && Promise.all(body?.delAssets?.map(async (delAsset) => {
             const delAssets = JSON.parse(delAsset)
             deleteFile(delAssets.path);
             await deleteAssets({ id: delAssets.id });
@@ -187,11 +189,37 @@ const editPackage = asyncHandler(async (req, res, next) => {
     }
 })
 
+const deletePackage = asyncHandler(async (req, res) => {
+    try {
+        const packageId = req?.query?.id ? urlDecode(req?.query?.id) : ''
+        if (!packageId) {
+            return res.status(400).json({ status: false, msg: 'Please select a valid package id.' })
+        }
+        const packageAssetsData = await getAllPackageAssetsModel({ package_id: packageId });;
+        if (packageAssetsData.length > 0) {
+            Promise.all(packageAssetsData.map(async (asset) => {
+                if (asset.path) {
+                    await deleteFile(asset.path);
+                }
+                return deleteAssets({ id: asset?.id });
+            }));
+        }
+        await deletePackageModel({ id: packageId });
+        await deleteItinerariesModel({ package_id: packageId });
+        await deletePoliciesModel({ package_id: packageId });
+        return res.status(200).json({ status: true, msg: 'Package deleted successfully.' })
+    } catch (error) {
+        console.log(error);
+        
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
+    }
+})
 
 module.exports = {
     getAllPackageType,
     createPackage,
     getAllPackages,
     getParticularPackage,
-    editPackage
+    editPackage,
+    deletePackage
 }

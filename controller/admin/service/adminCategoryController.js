@@ -75,6 +75,8 @@ const createCategory = asyncHandler(async (req, res) => {
         const category = await createCategoryModel(categoryData);
         return res.status(200).json({ status: true, msg: 'Category created successfully..', category: category })
     } catch (error) {
+        console.log(error);
+        
         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
     }
 })
@@ -97,14 +99,14 @@ const setCategory = asyncHandler(async (req, res) => {
         }
         if (req.file) {
             categoryData.image = req.file.path;
+            if (particularCategory[0]?.image) {
+                await deleteFile(particularCategory[0]?.image);
+            }
         }
         if (req?.body?.parent_id && req?.body?.parent_id != 'null') {
             zoneData.parent_id = req?.body?.parent_id
         }
         const category = await setCategoryModel(categoryData, req?.body?.id);
-        if (particularCategory[0]?.image) {
-            await deleteFile(particularCategory[0]?.image);
-        }
         return res.status(200).json({ status: true, msg: 'Category update successfully.', category: category })
     } catch (error) {
         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })

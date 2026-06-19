@@ -8,6 +8,7 @@ const sendOtp = (toEmail, toName, otp, type) => {
         mailJetConf(toEmail, toName, subject, html).then((result) => {
             return true;
         }).catch((err) => {
+            console.log(err)
             return false;
         });
     }else if(isValidPhoneNumber(toEmail)){

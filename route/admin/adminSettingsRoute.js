@@ -2,7 +2,7 @@ const express = require('express');
 const { adminAuthMiddleWare } = require('../../middleware/middleware');
 const { createUploader } = require('../../helper/uploadHelper');
 const { getParticularSiteSettings, setSiteSettings } = require('../../controller/admin/settings/adminSiteSettingsController');
-const { getAllPages, getFaqPage, setFaqPageSettings, getSeoPage, setSeoPageSettings, getAllOfficeAddress, setContactChanel, createOfficeAddress, deleteOfficeAddress } = require('../../controller/admin/settings/adminPageSettingsController');
+const { getAllPages, getFaqPage, setFaqPageSettings, getSeoPage, setSeoPageSettings, getAllOfficeAddress, setContactChanel, createOfficeAddress, deleteOfficeAddress, setCommonPageSettings, getCommonPage } = require('../../controller/admin/settings/adminPageSettingsController');
 const router = express.Router();
 
 
@@ -34,6 +34,9 @@ router.route('/getSeoPage').post(adminAuthMiddleWare, getSeoPage);
 router.route('/setSeoPageSettings').put(adminAuthMiddleWare, uploadSiteSettings.fields([
     { name: 'image', maxCount: 1 }
 ]), setSeoPageSettings);
+
+router.route('/getCommonPage').post(adminAuthMiddleWare, getCommonPage);
+router.route('/setCommonPageSettings').put(adminAuthMiddleWare, setCommonPageSettings);
 
 router.route('/getAllOfficeAddress').get(adminAuthMiddleWare, getAllOfficeAddress);
 router.route('/createOfficeAddress').post(adminAuthMiddleWare, createOfficeAddress);

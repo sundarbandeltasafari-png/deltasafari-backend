@@ -6,7 +6,7 @@ const { getAllCategory, createCategory, getParticularCategory, setCategory, dele
 const { createUploader } = require('../../helper/uploadHelper');
 const { getAllPost, createPost, updatePost, deletePost, getParticularPost, getPostTags } = require('../../controller/admin/service/adminPostController');
 const { getAllContactList } = require('../../controller/admin/service/adminServiceController');
-const { getAllZone, getParticularZone, createZone, setZone } = require('../../controller/admin/service/adminZoneController');
+const { getAllZone, getParticularZone, createZone, setZone, deleteZone } = require('../../controller/admin/service/adminZoneController');
 
 // Post Category 
 const uploadCategory = createUploader('image', 'category');
@@ -40,6 +40,7 @@ router.route('/getZone').get(adminAuthMiddleWare, getAllZone)
 router.route('/getParticularZone').post(adminAuthMiddleWare, getParticularZone)
 router.route('/createZone').post(adminAuthMiddleWare, uploadZone.single('image'), createZone)
 router.route('/setZone').put(adminAuthMiddleWare, uploadZone.single('image'), setZone)
+router.route('/deleteZone').delete(adminAuthMiddleWare, deleteZone)
 
 router.route('/getAllContacts').get(adminAuthMiddleWare, getAllContactList);
 

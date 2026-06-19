@@ -2,9 +2,10 @@
 const asyncHandler = require('express-async-handler');
 const md5 = require('md5');
 
-const { getAllPostsModel, createPostModel, setPostModel, deletePostModel, getAllPostsConditionModel, getParticularPostsModel, createFeatureVideoModel, createPostsTagsModel, createTagsModel, deleteFeatureVideoModel, getParticularTagsModel, getPostTagsModel } = require('../../../model/admin/service/adminPostModel');
+const { getAllPostsModel, createPostModel, setPostModel, deletePostModel, getAllPostsConditionModel, getParticularPostsModel, createFeatureVideoModel, createPostsTagsModel, createTagsModel, deleteFeatureVideoModel, getParticularTagsModel, getPostTagsModel, updatePostModel, deletePostsTagsModel } = require('../../../model/admin/service/adminPostModel');
 const slugify = require('slugify');
 const { urlDecode } = require('../../../helper/urlHelper');
+const { deleteFile } = require('../../../helper/deleteHelper');
 
 
 const getAllPost = asyncHandler(async (req, res) => {
@@ -57,7 +58,6 @@ const createPost = asyncHandler(async (req, res) => {
             author_id: req?.user?.id,
             slug: slugify(req?.body?.title, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }),
             category_id: req?.body?.category_id,
-            zone_id: req?.body?.zone_id,
             status: req?.body?.status,
             featured_image: null,
         }
@@ -94,7 +94,7 @@ const updatePost = asyncHandler(async (req, res) => {
         if (!req?.body?.title && !req?.body?.summary && !req?.body?.content && !req?.body?.category_id && !req?.body?.featured_image) {
             return res.status(400).json({ status: false, msg: 'Please enter valid Post details.' })
         }
-        const postId = req?.body?.post_id;
+        const postId = urlDecode(req?.body?.post_id);
         const particulerPost = await getParticularPostsModel({ id: postId });
         const PostData = {
             title: req?.body?.title,
@@ -103,20 +103,19 @@ const updatePost = asyncHandler(async (req, res) => {
             author_id: req?.user?.id,
             slug: slugify(req?.body?.title, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }),
             category_id: req?.body?.category_id,
-            zone_id: req?.body?.zone_id,
             status: req?.body?.status
         }
 
         if (req.files['featured_image'].length > 0) {
             PostData.featured_image = req.files['featured_image'][0].path;
-            await deletePost(particulerPost?.featured_image);
+            await deleteFile(particulerPost?.featured_image);
         }
         if (req.files['featured_video'] && req.files['featured_video'].length > 0) {
             const postVideo = await getParticularFeatureVideoModel({ id: particulerPost?.featured_video });
             const video = await createFeatureVideoModel({ path: req.files['featured_video'][0].path });
             PostData.featured_video = video.insertId;
             await deleteFeatureVideoModel({ id: particulerPost?.featured_video });
-            await deletePost(postVideo?.path)
+            await deleteFile(postVideo?.path)
         }
         const Post = await updatePostModel(PostData, { id: postId });
 
@@ -134,6 +133,8 @@ const updatePost = asyncHandler(async (req, res) => {
         }
         return res.status(200).json({ status: true, msg: 'Post updated successfully..', Post: Post })
     } catch (error) {
+        console.log(error);
+        
         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
     }
 })

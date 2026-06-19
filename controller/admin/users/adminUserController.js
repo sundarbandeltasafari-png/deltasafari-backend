@@ -185,8 +185,10 @@ const getParticularUser = asyncHandler(async (req, res, next) => {
 })
 
 const getSearchUsers = asyncHandler(async (req, res, next) => {
+
     try {
-        const users = await getSearchUsersModel({ admin: 0 }, req?.body?.searchData);
+        const condition = req?.body?.status ? { status: req?.body?.status, admin: 0 } : { admin: 0 };
+        const users = await getSearchUsersModel(condition, req?.body?.searchData);
         return res.status(200).json({ status: true, msg: 'All Users..', users: users })
     } catch (error) {
         next(error)

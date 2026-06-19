@@ -2,7 +2,7 @@ const asyncHandler = require('express-async-handler');
 const Razorpay = require('razorpay');
 require('dotenv').config()
 const crypto = require('crypto-js');
-const { getAllPackagesModel, getAllPackagesDetails, createSubscription, getUserSubscriptionsModel, updateSubscription, createSearchHistoryModel, getSearchHistoryModel, getAllSubjectsModel, getAllLanguagesModel, getStudyProfileModel, createContactModel, getRecentSearchHistoryModel, getAllPostsConditionModel, getAllCategorysConditionModel, getParticularPostModel, getAllPostsByCategoryModel, getTopTagsModel, getAllBreakingPostsConditionModel } = require('../../model/service/serviceModel');
+const { getAllPackagesModel, getAllPackagesDetails, createSubscription, getUserSubscriptionsModel, updateSubscription, createSearchHistoryModel, getSearchHistoryModel, getAllSubjectsModel, getAllLanguagesModel, getStudyProfileModel, createContactModel, getRecentSearchHistoryModel, getAllPostsConditionModel, getAllCategorysConditionModel, getParticularPostModel, getAllPostsByCategoryModel, getTopTagsModel, getAllBreakingPostsConditionModel, getSiteSettingsConditionModel } = require('../../model/service/serviceModel');
 // const { getGptAnswer } = require('../helper/gptHelper');
 const { getTokenUser, setUserById } = require('../../model/auth/authModel');
 
@@ -157,71 +157,25 @@ const getRecentSearchHistory = asyncHandler(async (req, res) => {
 })
 
 
-// Languages
-const getAllPost = asyncHandler(async (req, res) => {
+// Site Settings
+const getSiteSettings = asyncHandler(async (req, res, next) => {
     try {
-        const Post = await getAllPostsConditionModel({ status: 1 });
-        return res.status(200).json({ status: true, msg: 'All Post..', posts: Post })
+        const siteSettings = await getSiteSettingsConditionModel({ id: 1 });
+        // console.log(Page)
+        return res.status(200).json({ status: true, msg: 'Site settings found!', siteSettings: siteSettings })
     } catch (error) {
-        console.log(error)
-        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-    }
-})
-
-const getParticularPost = asyncHandler(async (req, res) => {
-    try {
-        const postId = req.query?.id;
-        console.log(postId)
-        const Post = await getParticularPostModel({ status: 1, id: postId });
-        return res.status(200).json({ status: true, msg: 'All Post..', posts: Post })
-    } catch (error) {
-        console.log(error)
-        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-    }
-})
-
-const getCategory = asyncHandler(async (req, res) => {
-    try {
-        const category = await getAllCategorysConditionModel({ status: 1, showleft: 1 });
-        return res.status(200).json({ status: true, msg: 'Category..', category: category })
-    } catch (error) {
-        console.log(error)
-        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-    }
-})
-
-const getPostByCategory = asyncHandler(async (req, res) => {
-    try {
-        if (!req?.query?.cat) {
-            return res.status(400).json({ status: false, msg: 'Please enter valid Post.' })
-        }
-        const Post = await getAllPostsByCategoryModel({slug: req?.query?.cat});
-        return res.status(200).json({ status: true, msg: 'Post..', posts: Post })
-    } catch (error) {
-        console.log(error)
-        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
+        next(error)
     }
 })
 
 
-const getTopTags = asyncHandler(async (req, res) => {
-    try {
-        const Tags = await getTopTagsModel();
-        return res.status(200).json({ status: true, msg: 'Tags..', tags: Tags })
-    } catch (error) {
-        console.log(error)
-        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-    }
-})
 
-const getBreakingPost = asyncHandler(async (req, res) => {
-    try {
-        const Post = await getAllBreakingPostsConditionModel({ breaking_news: 1 });
-        return res.status(200).json({ status: true, msg: 'All Post..', posts: Post })
-    } catch (error) {
-        console.log(error)
-        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-    }
-})
 
-module.exports = { placeOrder, verifyOrder, getAllPackage, createContact, getRecentSearchHistory, getAllPost, getCategory, getParticularPost, getPostByCategory, getTopTags, getBreakingPost }
+module.exports = { 
+    placeOrder, 
+    verifyOrder, 
+    getAllPackage, 
+    createContact, 
+    getRecentSearchHistory,
+    getSiteSettings
+ }

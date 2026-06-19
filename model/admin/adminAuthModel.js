@@ -39,6 +39,8 @@ function getLoginUser(email, password) {
                 reject(new Error("Something went worng in database!" + err?.message));
             }
             if(rows){
+                console.log(rows);
+                
                 resolve(JSON.parse(JSON.stringify(rows)));
             }else{
                 resolve([]);

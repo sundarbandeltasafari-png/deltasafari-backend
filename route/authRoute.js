@@ -5,17 +5,17 @@ const { register, login, resetPasswordLink, registerOtpValidate, registerPartial
 const {authMiddleWare} = require('../middleware/middleware');
 const { viewProfile } = require('../controller/user/userController');
 
-// router.route('/register').post(register);
 // router.route('/registerPartials').post(registerPartials);
 // router.route('/validatePartials').post(validatePartials);
-// router.route('/registerOtpValidate').post(registerOtpValidate);
+// router.route('/loginOtpValidate').post(loginOtpValidate);
 
 
 
+router.route('/register').post(register);
+router.route('/registerOtpValidate').post(registerOtpValidate);
 router.route('/login').post(login);
-router.route('/loginOtpValidate').post(loginOtpValidate);
 router.route('/resendOtp').post(resendOtp);
-router.route('/resetpassword').post(resetPasswordLink);
+router.route('/resetpasswordreq').post(resetPasswordLink);
 router.route('/resetPassword').post(resetPassword);
 router.route('/getUserDetails').get(authMiddleWare, viewProfile);
 module.exports = router;
