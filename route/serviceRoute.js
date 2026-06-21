@@ -4,6 +4,7 @@ const { placeOrder, verifyOrder, getAllPackage, createContact, getRecentSearchHi
 const { getAllPost, getCategory, getParticularPost, getPostByCategory } = require('../controller/service/postController');
 const { getAllPages, getParticularPage } = require('../controller/service/pageController');
 const { getHomeDestination, getContactDetails, getHomePosts } = require('../controller/service/commonController');
+const { getHomePackages, getDestinations, getParticularPackage, createBookings } = require('../controller/service/packageControler');
 const router = express.Router();
 
 router.route('/placeOrder').post(authMiddleWare, placeOrder);
@@ -35,6 +36,18 @@ router.route('/getSiteSettings').get(getSiteSettings);
 router.route('/getHomeDestination').get(getHomeDestination);
 router.route('/getContactDetails').get(getContactDetails);
 router.route('/getHomePosts').get(getHomePosts);
+
+
+// Packages
+router.route('/getHomePackages').get(getHomePackages);
+router.route('/getParticularPackage').get(getParticularPackage);
+
+
+// Destinations
+router.route('/getDestinations').post(getDestinations);
+
+// Bookings
+router.route('/createBookings').post(createBookings);
 
 
 module.exports = router

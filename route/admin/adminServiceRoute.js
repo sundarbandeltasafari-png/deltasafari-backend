@@ -3,10 +3,11 @@ const router = express.Router();
 
 const { adminAuthMiddleWare } = require('../../middleware/middleware');
 const { getAllCategory, createCategory, getParticularCategory, setCategory, deleteCategory } = require('../../controller/admin/service/adminCategoryController');
-const { createUploader } = require('../../helper/uploadHelper');
 const { getAllPost, createPost, updatePost, deletePost, getParticularPost, getPostTags } = require('../../controller/admin/service/adminPostController');
 const { getAllContactList } = require('../../controller/admin/service/adminServiceController');
 const { getAllZone, getParticularZone, createZone, setZone, deleteZone } = require('../../controller/admin/service/adminZoneController');
+const { createUploader } = require('../../helper/uploadHelper');
+const { getAllCity, cityStatus, getParticularCity, getSearchCity, createCity, updateCity, getAllCountries } = require('../../controller/admin/service/adminCityController');
 
 // Post Category 
 const uploadCategory = createUploader('image', 'category');
@@ -43,6 +44,21 @@ router.route('/setZone').put(adminAuthMiddleWare, uploadZone.single('image'), se
 router.route('/deleteZone').delete(adminAuthMiddleWare, deleteZone)
 
 router.route('/getAllContacts').get(adminAuthMiddleWare, getAllContactList);
+
+
+// Cities
+const uploadCity = createUploader('image', 'cities');
+router.route('/getCity').get(adminAuthMiddleWare, getAllCity);
+router.route('/getAllCountries').get(adminAuthMiddleWare, getAllCountries);
+router.route('/getParticularCity').get(adminAuthMiddleWare, getParticularCity);
+
+router.route('/createCity').post(adminAuthMiddleWare, uploadCity.fields([
+  { name: 'city_image', maxCount: 1 }
+]), createCity);
+
+router.route('/updateCity').put(adminAuthMiddleWare, uploadCity.fields([
+  { name: 'city_image', maxCount: 1 }
+]), updateCity);
 
 
 module.exports = router;

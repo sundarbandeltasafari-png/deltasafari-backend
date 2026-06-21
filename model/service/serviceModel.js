@@ -176,6 +176,37 @@ function getSiteSettingsConditionModel(condition) {
     })
 }
 
+function getContactChannelsConditionModel() {
+    return new Promise((resolve, reject) => {
+        connection.query(`SELECT * FROM contact_channels ORDER BY id DESC`, (err, rows) => {
+            if (err) {
+                reject(new Error("Something went worng in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)) ? JSON.parse(JSON.stringify(rows))[0] : null);
+            } else {
+                resolve([]);
+            }
+        });
+    })
+}
+
+function getOfficesConditionModel(condition) {
+     const customcondition = buildCondition(condition);
+    return new Promise((resolve, reject) => {
+        connection.query(`SELECT * FROM offices ${customcondition} ORDER BY id DESC`, (err, rows) => {
+            if (err) {
+                reject(new Error("Something went worng in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)) ? JSON.parse(JSON.stringify(rows))[0] : null);
+            } else {
+                resolve([]);
+            }
+        });
+    })
+}
+
 module.exports = {
     getAllPackagesModel, 
     getAllPackagesDetails, 
@@ -187,5 +218,7 @@ module.exports = {
     getAllLanguagesModel, 
     createContactModel, 
     getRecentSearchHistoryModel,
-    getSiteSettingsConditionModel
+    getSiteSettingsConditionModel,
+    getContactChannelsConditionModel,
+    getOfficesConditionModel
 }

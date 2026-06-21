@@ -2,7 +2,21 @@ const asyncHandler = require('express-async-handler');
 const Razorpay = require('razorpay');
 require('dotenv').config()
 const crypto = require('crypto-js');
-const { getAllPackagesModel, getAllPackagesDetails, createSubscription, getUserSubscriptionsModel, updateSubscription, createSearchHistoryModel, getSearchHistoryModel, getAllSubjectsModel, getAllLanguagesModel, getStudyProfileModel, createContactModel, getRecentSearchHistoryModel, getAllPostsConditionModel, getAllCategorysConditionModel, getParticularPostModel, getAllPostsByCategoryModel, getTopTagsModel, getAllBreakingPostsConditionModel, getSiteSettingsConditionModel } = require('../../model/service/serviceModel');
+const {
+    getAllPackagesModel,
+    getAllPackagesDetails,
+    createSubscription,
+    getUserSubscriptionsModel,
+    updateSubscription,
+    createSearchHistoryModel,
+    getSearchHistoryModel,
+    getAllLanguagesModel,
+    createContactModel,
+    getRecentSearchHistoryModel,
+    getSiteSettingsConditionModel,
+    getContactChannelsConditionModel,
+    getOfficesConditionModel
+} = require('../../model/service/serviceModel');
 // const { getGptAnswer } = require('../helper/gptHelper');
 const { getTokenUser, setUserById } = require('../../model/auth/authModel');
 
@@ -161,7 +175,10 @@ const getRecentSearchHistory = asyncHandler(async (req, res) => {
 const getSiteSettings = asyncHandler(async (req, res, next) => {
     try {
         const siteSettings = await getSiteSettingsConditionModel({ id: 1 });
-        // console.log(Page)
+        const contacts = await getContactChannelsConditionModel();
+        const offices = await getOfficesConditionModel({office_type: 'Head office'});
+        siteSettings.contacts = contacts;
+        siteSettings.offices = offices;
         return res.status(200).json({ status: true, msg: 'Site settings found!', siteSettings: siteSettings })
     } catch (error) {
         next(error)
@@ -171,11 +188,11 @@ const getSiteSettings = asyncHandler(async (req, res, next) => {
 
 
 
-module.exports = { 
-    placeOrder, 
-    verifyOrder, 
-    getAllPackage, 
-    createContact, 
+module.exports = {
+    placeOrder,
+    verifyOrder,
+    getAllPackage,
+    createContact,
     getRecentSearchHistory,
     getSiteSettings
- }
+}

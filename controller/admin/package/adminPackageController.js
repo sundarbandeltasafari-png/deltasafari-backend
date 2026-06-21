@@ -1,6 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const md5 = require('md5');
-const { getAllPackageTypesModel, createPackageModel, createPackageAssetsModel, createPackageItinerariesModel, createPackagePoliciesModel, getAllPackageModel, getAllPackageItinerariesModel, getAllPackageAssetsModel, getAllPackagePoliciesModel, setPackageModel, getParticularPackageModel, deletePoliciesModel, deleteItinerariesModel, deleteAssets, deletePackageModel } = require('../../../model/admin/package/adminPackageModel');
+const { getAllPackageTypesModel, createPackageModel, createPackageAssetsModel, createPackageItinerariesModel, createPackagePoliciesModel, getAllPackageModel, getAllPackageItinerariesModel, getAllPackageAssetsModel, getAllPackagePoliciesModel, setPackageModel, getParticularPackageModel, deletePoliciesModel, deleteItinerariesModel, deleteAssets, deletePackageModel, getAllBookingsModel } = require('../../../model/admin/package/adminPackageModel');
 const slugify = require('slugify');
 const { urlDecode } = require('../../../helper/urlHelper');
 const { deleteFile } = require('../../../helper/deleteHelper');
@@ -215,11 +215,22 @@ const deletePackage = asyncHandler(async (req, res) => {
     }
 })
 
+
+const getAllBookings = asyncHandler(async (req, res, next) => {
+    try {
+        const bookings = await getAllBookingsModel();
+        return res.status(200).json({ status: true, msg: 'All bookings..', bookings: bookings })
+    } catch (error) {
+        next(error)
+    }
+})
+
 module.exports = {
     getAllPackageType,
     createPackage,
     getAllPackages,
     getParticularPackage,
     editPackage,
-    deletePackage
+    deletePackage,
+    getAllBookings
 }

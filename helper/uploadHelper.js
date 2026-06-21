@@ -4,65 +4,90 @@ const fs = require('fs');
 const sharp = require('sharp');
 
 const createUploader = (type = 'image', subfolder = '') => {
-  // 1. Define configurations based on type
   let allowedMimes = [];
   let maxSize = 0;
 
+  // 1. Define configurations based on type
   if (type === 'video') {
     allowedMimes = ['video/mp4', 'video/mpeg', 'video/quicktime'];
-    maxSize = 100 * 1024 * 1024; // 100MB for videos
-  } else if (type == "both") {
+    maxSize = 100 * 1024 * 1024; // 100MB
+  } else if (type === 'both') {
     allowedMimes = ['video/mp4', 'video/mpeg', 'video/quicktime', 'image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    maxSize = 100 * 1024 * 1024; // 50MB for photos
-  }
-  else {
+    maxSize = 100 * 1024 * 1024; // 100MB
+  } else {
     allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    maxSize = 5 * 1024 * 1024; // 5MB for photos
+    maxSize = 50 * 1024 * 1024; // 50MB
   }
 
-  const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
+  // 2. Custom Storage Engine
+  const customStorage = {
+    _handleFile: (req, file, cb) => {
       const uploadPath = path.join('uploads', subfolder);
-      fs.mkdirSync(uploadPath, { recursive: true }); // Auto-create folder
-      cb(null, uploadPath);
+      fs.mkdirSync(uploadPath, { recursive: true });
+
+      const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+
+      // Handle Videos
+      if (file.mimetype.startsWith('video/')) {
+        const filename = `${uniqueSuffix}${path.extname(file.originalname)}`;
+        const fullPath = path.join(uploadPath, filename);
+        const outStream = fs.createWriteStream(fullPath);
+
+        file.stream.pipe(outStream);
+        outStream.on('error', cb);
+        outStream.on('finish', () => {
+          cb(null, { destination: uploadPath, filename: filename, path: fullPath, size: outStream.bytesWritten });
+        });
+      }
+
+      // Handle and Optimize Images
+      else if (file.mimetype.startsWith('image/')) {
+        const filename = `${uniqueSuffix}.jpg`; // Enforce .jpg extension
+        const fullPath = path.join(uploadPath, filename);
+
+        // Setup Sharp transformation pipeline
+        const transform = sharp()
+          .resize({ width: 1200, withoutEnlargement: true }) // Resize to max 1200px width safely
+          .jpeg({ quality: 80, progressive: true }); // Convert to progressive JPEG at 80% quality
+
+        const outStream = fs.createWriteStream(fullPath);
+
+        // Pipe: Upload Stream -> Sharp Optimization -> Disk Storage
+        file.stream.pipe(transform).pipe(outStream);
+
+        outStream.on('error', cb);
+        outStream.on('finish', () => {
+          cb(null, {
+            destination: uploadPath,
+            filename: filename,
+            path: fullPath,
+            mimetype: 'image/jpeg',
+            size: outStream.bytesWritten
+          });
+        });
+      }
     },
-    filename: (req, file, cb) => {
-      const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`;
-      cb(null, uniqueName);
+
+    _removeFile: (req, file, cb) => {
+      if (file.path) {
+        fs.unlink(file.path, cb);
+      } else {
+        cb(null);
+      }
     }
-  });
+  };
 
-
+  // 3. Return the standard Multer instance configured with our custom engine
   return multer({
-    storage: storage,
+    storage: customStorage,
     limits: { fileSize: maxSize },
     fileFilter: (req, file, cb) => {
       if (!allowedMimes.includes(file.mimetype)) {
-        return cb(new Error(`Invalid file type. Mixed formats allowed: Images & Videos.`));
+        return cb(new Error(`Invalid file type for mode "${type}".`));
       }
       cb(null, true);
     }
   });
 };
 
-
-const optimizeImage = async (filePath) => {
-  const ext = path.extname(filePath);
-  const dirname = path.dirname(filePath);
-  const basename = path.basename(filePath, ext);
-
-  // Create a new path for the optimized image (converting to WebP)
-  const outputPath = path.join(dirname, `${basename}-optimized.webp`);
-
-  await sharp(filePath)
-    .resize({ width: 1200, withoutEnlargement: true }) // Resize to a max width of 1200px
-    .webp({ quality: 80 }) // Convert to WebP and set quality to 80%
-    .toFile(outputPath);
-
-  // Delete the original unoptimized file to save space
-  fs.unlinkSync(filePath);
-
-  return outputPath;
-};
-
-module.exports = { createUploader, optimizeImage };
+module.exports = { createUploader };
