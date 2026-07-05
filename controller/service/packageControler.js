@@ -1,6 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const md5 = require('md5');
-const { getHomePackagesModel, getDestinationsModel, getAllPackageItinerariesModel, getAllPackagePoliciesModel, getParticularPackageModel, createBookingsModel } = require('../../model/service/packageModel');
+const { getHomePackagesModel, getDestinationsModel, getAllPackageItinerariesModel, getAllPackagePoliciesModel, getParticularPackageModel, createBookingsModel, getFilteredPackagesModel } = require('../../model/service/packageModel');
 const { urlDecode } = require('../../helper/urlHelper');
 const { getAllPackageAssetsModel } = require('../../model/admin/package/adminPackageModel');
 
@@ -64,6 +64,28 @@ const createBookings = asyncHandler(async (req, res) => {
     }
 })
 
+const getFilteredPackages = asyncHandler(async (req, res, next) => {
+    try {
+        const destination = req.query?.destination || req.body?.destination;
+        const name = req.query?.name || req.body?.name;
+        const category = req.query?.category || req.body?.category;
+        const city = req.query?.city || req.body?.city;
+        const lastId = req.query?.lastId || req.body?.lastId;
+
+        const filters = {};
+        if (destination && destination.toString().trim() !== '') filters.destination = destination.toString().trim();
+        if (name && name.toString().trim() !== '') filters.name = name.toString().trim();
+        if (category && category.toString().trim() !== '') filters.category = category.toString().trim();
+        if (city && city.toString().trim() !== '') filters.city = city.toString().trim();
+        if (lastId && lastId.toString().trim() !== '') filters.lastId = lastId.toString().trim();
+
+        const packages = await getFilteredPackagesModel(filters);
+        return res.status(200).json({ status: true, msg: 'Filtered packages fetched successfully.', packages: packages })
+    } catch (error) {
+        next(error)
+    }
+})
 
 
-module.exports = { getHomePackages, getDestinations, getParticularPackage, createBookings }
+
+module.exports = { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages }
