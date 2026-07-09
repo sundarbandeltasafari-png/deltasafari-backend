@@ -1,8 +1,17 @@
 const asyncHandler = require('express-async-handler');
 const md5 = require('md5');
-const { getHomePackagesModel, getDestinationsModel, getAllPackageItinerariesModel, getAllPackagePoliciesModel, getParticularPackageModel, createBookingsModel, getFilteredPackagesModel } = require('../../model/service/packageModel');
+const { getHomePackagesModel, getDestinationsModel, getAllPackageItinerariesModel, getAllPackagePoliciesModel, getParticularPackageModel, createBookingsModel, getFilteredPackagesModel, getCitiesModel, getAllPackageTypesModel } = require('../../model/service/packageModel');
 const { urlDecode } = require('../../helper/urlHelper');
 const { getAllPackageAssetsModel } = require('../../model/admin/package/adminPackageModel');
+
+const getAllPackageType = asyncHandler(async (req, res, next) => {
+    try {
+        const packageTypes = await getAllPackageTypesModel(req?.body ? {...req?.body, status: 1} : { status: 1 });
+        return res.status(200).json({ status: true, msg: 'All PackageTypes..', packageTypes: packageTypes })
+    } catch (error) {
+        next(error)
+    }
+})
 
 const getHomePackages = asyncHandler(async (req, res) => {
     try {
@@ -25,6 +34,21 @@ const getDestinations = asyncHandler(async (req, res) => {
         console.log(destinations);
         
         return res.status(200).json({ status: true, msg: 'All destinations...', destinations: destinations })
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
+    }
+})
+
+const getCities = asyncHandler(async (req, res) => {
+    try {
+        if (!req?.body?.condition) {
+            return res.status(401).json({ status: false, msg: 'Please add condition' })
+        }
+        const cities = await getCitiesModel(req?.body?.condition);
+        console.log(cities);
+        
+        return res.status(200).json({ status: true, msg: 'All cities...', cities: cities })
     } catch (error) {
         console.log(error);
         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
@@ -88,4 +112,4 @@ const getFilteredPackages = asyncHandler(async (req, res, next) => {
 
 
 
-module.exports = { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages }
+module.exports = { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages, getCities, getAllPackageType }

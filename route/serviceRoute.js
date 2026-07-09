@@ -4,7 +4,7 @@ const { placeOrder, verifyOrder, getAllPackage, createContact, getRecentSearchHi
 const { getAllPost, getCategory, getParticularPost, getPostByCategory } = require('../controller/service/postController');
 const { getAllPages, getParticularPage, getFaqPage, getSearchBlogs, getParticularBlog, getAllBlogs, getTotalCategoryBlogs, getTrendingBlogs } = require('../controller/service/pageController');
 const { getHomeDestination, getContactDetails, getHomePosts } = require('../controller/service/commonController');
-const { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages } = require('../controller/service/packageControler');
+const { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages, getCities, getAllPackageType } = require('../controller/service/packageControler');
 const router = express.Router();
 
 router.route('/placeOrder').post(authMiddleWare, placeOrder);
@@ -51,6 +51,7 @@ router.route('/getHomePosts').get(getHomePosts);
 
 
 // Packages
+router.route('/getAllPackageType').get(getAllPackageType).post(getAllPackageType);
 router.route('/getHomePackages').get(getHomePackages);
 router.route('/getParticularPackage').get(getParticularPackage);
 router.route('/filterPackages').get(getFilteredPackages).post(getFilteredPackages);
@@ -58,6 +59,9 @@ router.route('/filterPackages').get(getFilteredPackages).post(getFilteredPackage
 
 // Destinations
 router.route('/getDestinations').post(getDestinations);
+
+// Cities
+router.route('/getCities').post(getCities);
 
 // Bookings
 router.route('/createBookings').post(createBookings);

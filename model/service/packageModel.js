@@ -2,6 +2,24 @@ const connection = require('../../Connection');
 const md5 = require('md5');
 const { buildCondition } = require('../../helper/modelHelper');
 
+
+function getAllPackageTypesModel(condition) {
+    const customCondition = buildCondition(condition)
+    return new Promise((resolve, reject) => {
+        connection.query(`SELECT * FROM package_types ${customCondition ? customCondition+ ' OR visible = 3' : customCondition}`, (err, rows) => {
+            if (err) {
+                reject(new Error("Something went worng in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    })
+}
+
+
 function getHomePackagesModel(condition, type = true) {
     const customcondition = condition ? (type ? "WHERE " : ' ') + Object.entries(condition)
         .map(([key, value]) => value == '' && value != 0 ? `packages_master.${key} IS NULL` : `packages_master.${key} = '${value}'`) // custom "=>" separator
@@ -35,6 +53,22 @@ function getDestinationsModel(condition){
    const customcondition = buildCondition(condition);
     return new Promise((resolve, reject) => {
         connection.query(`SELECT * FROM zone ${customcondition} ORDER BY id DESC`, (err, rows) => {
+            if (err) {
+                reject(new Error("Something went worng in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    }) 
+}
+
+function getCitiesModel(condition){
+   const customcondition = buildCondition(condition);
+    return new Promise((resolve, reject) => {
+        connection.query(`SELECT * FROM cities ${customcondition} ORDER BY id DESC`, (err, rows) => {
             if (err) {
                 reject(new Error("Something went worng in database!" + err?.message));
             }
@@ -231,5 +265,7 @@ module.exports = {
     getAllPackagePoliciesModel,
     getAllPackageItinerariesModel,
     createBookingsModel,
-    getFilteredPackagesModel
+    getFilteredPackagesModel,
+    getCitiesModel,
+    getAllPackageTypesModel
 }
