@@ -18,7 +18,6 @@ const getAllPackageType = asyncHandler(async (req, res, next) => {
 const createPackage = asyncHandler(async (req, res, next) => {
     try {
         const body = req.body;
-        console.log(body?.days)
         const payload = {
             title: body?.name,
             description: body?.description,
