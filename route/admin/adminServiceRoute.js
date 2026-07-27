@@ -4,7 +4,7 @@ const router = express.Router();
 const { adminAuthMiddleWare } = require('../../middleware/middleware');
 const { getAllCategory, createCategory, getParticularCategory, setCategory, deleteCategory } = require('../../controller/admin/service/adminCategoryController');
 const { getAllPost, createPost, updatePost, deletePost, getParticularPost, getPostTags } = require('../../controller/admin/service/adminPostController');
-const { getAllContactList } = require('../../controller/admin/service/adminServiceController');
+const { getAllContactList, getAllCorporateLeadEnquiries, getParticularCorporateLeadEnquiry, updateCorporateLeadEnquiry, getAdminDashboard, updateHolidayEnquiry, getParticularHolidayEnquiry, getAllHolidayEnquiries, getAllContactQueriesAdmin, getParticularContactQueryAdmin, updateContactQueryAdmin, deleteContactQueryAdmin } = require('../../controller/admin/service/adminServiceController');
 const { getAllZone, getParticularZone, createZone, setZone, deleteZone } = require('../../controller/admin/service/adminZoneController');
 const { createUploader } = require('../../helper/uploadHelper');
 const { getAllCity, cityStatus, getParticularCity, getSearchCity, createCity, updateCity, getAllCountries } = require('../../controller/admin/service/adminCityController');
@@ -44,6 +44,25 @@ router.route('/setZone').put(adminAuthMiddleWare, uploadZone.single('image'), se
 router.route('/deleteZone').delete(adminAuthMiddleWare, deleteZone)
 
 router.route('/getAllContacts').get(adminAuthMiddleWare, getAllContactList);
+
+// Admin Dashboard Endpoint
+router.route('/getDashboard').get(adminAuthMiddleWare, getAdminDashboard);
+
+// Corporate Lead Enquiries (Admin Routes)
+router.route('/getAllCorporateLeadEnquiries').get(adminAuthMiddleWare, getAllCorporateLeadEnquiries);
+router.route('/getParticularCorporateLeadEnquiry').get(adminAuthMiddleWare, getParticularCorporateLeadEnquiry).post(adminAuthMiddleWare, getParticularCorporateLeadEnquiry);
+router.route('/updateCorporateLeadEnquiry').put(adminAuthMiddleWare, updateCorporateLeadEnquiry).post(adminAuthMiddleWare, updateCorporateLeadEnquiry);
+
+// Holiday Enquiries (Admin Routes)
+router.route('/getAllHolidayEnquiries').get(adminAuthMiddleWare, getAllHolidayEnquiries);
+router.route('/getParticularHolidayEnquiry').get(adminAuthMiddleWare, getParticularHolidayEnquiry).post(adminAuthMiddleWare, getParticularHolidayEnquiry);
+router.route('/updateHolidayEnquiry').put(adminAuthMiddleWare, updateHolidayEnquiry).post(adminAuthMiddleWare, updateHolidayEnquiry);
+
+// Contact Queries (Admin Routes)
+router.route('/getAllContactQueries').get(adminAuthMiddleWare, getAllContactQueriesAdmin);
+router.route('/getParticularContactQuery').get(adminAuthMiddleWare, getParticularContactQueryAdmin).post(adminAuthMiddleWare, getParticularContactQueryAdmin);
+router.route('/updateContactQuery').put(adminAuthMiddleWare, updateContactQueryAdmin).post(adminAuthMiddleWare, updateContactQueryAdmin);
+router.route('/deleteContactQuery').delete(adminAuthMiddleWare, deleteContactQueryAdmin);
 
 
 // Cities

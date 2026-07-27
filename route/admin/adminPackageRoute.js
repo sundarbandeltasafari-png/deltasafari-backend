@@ -1,6 +1,6 @@
 const express = require('express');
 const { adminAuthMiddleWare } = require('../../middleware/middleware');
-const { getAllPackageType, createPackage, getAllPackages, getParticularPackage, editPackage, deletePackage, getAllBookings } = require('../../controller/admin/package/adminPackageController');
+const { getAllPackageType, createPackage, getAllPackages, getParticularPackage, editPackage, deletePackage, getAllBookings, duplicatePackage } = require('../../controller/admin/package/adminPackageController');
 const { createUploader } = require('../../helper/uploadHelper');
 const validateSchema = require('../../middleware/validateSchema');
 const { tourValidationSchema } = require('../../schema/packageSchema');
@@ -21,6 +21,8 @@ router.route('/editParticularPackage').post(adminAuthMiddleWare, validateSchema(
 ]), editPackage);
 router.route('/deletePackage').delete(adminAuthMiddleWare, deletePackage);
 
+// Duplicate Package Route
+router.route('/duplicatePackage').post(adminAuthMiddleWare, duplicatePackage).get(adminAuthMiddleWare, duplicatePackage);
 
 router.route('/getAllBookings').get(adminAuthMiddleWare, getAllBookings)
 

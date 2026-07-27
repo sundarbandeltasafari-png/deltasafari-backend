@@ -15,7 +15,11 @@ const {
     getRecentSearchHistoryModel,
     getSiteSettingsConditionModel,
     getContactChannelsConditionModel,
-    getOfficesConditionModel
+    getOfficesConditionModel,
+    createCorporateLeadEnquiryModel,
+    createHolidayEnquiryModel,
+    createContactQueryModel,
+    getContactQueriesModel
 } = require('../../model/service/serviceModel');
 // const { getGptAnswer } = require('../helper/gptHelper');
 const { getTokenUser, setUserById } = require('../../model/auth/authModel');
@@ -176,7 +180,7 @@ const getSiteSettings = asyncHandler(async (req, res, next) => {
     try {
         const siteSettings = await getSiteSettingsConditionModel({ id: 1 });
         const contacts = await getContactChannelsConditionModel();
-        const offices = await getOfficesConditionModel({office_type: 'Head office'});
+        const offices = await getOfficesConditionModel({ office_type: 'Head office' });
         siteSettings.contacts = contacts;
         siteSettings.offices = offices;
         return res.status(200).json({ status: true, msg: 'Site settings found!', siteSettings: siteSettings })
@@ -185,8 +189,112 @@ const getSiteSettings = asyncHandler(async (req, res, next) => {
     }
 })
 
+// Corporate Lead Enquiry - Create (User API)
+const createCorporateLeadEnquiry = asyncHandler(async (req, res) => {
+    try {
+        if (!req?.body?.name && !req?.body?.email && !req?.body?.phone && !req?.body?.company_name) {
+            return res.status(400).json({ status: false, msg: 'Please enter all required fields (name, email, phone, or company_name).' });
+        }
+        const leadData = {
+            company_name: req?.body?.company_name || null,
+            name: req?.body?.name || null,
+            email: req?.body?.email || null,
+            phone: req?.body?.phone || null,
+            destination: req?.body?.destination || null,
+            group_size: req?.body?.group_size || null,
+            travel_date: req?.body?.travel_date || null,
+            budget: req?.body?.budget || null,
+            message: req?.body?.message || null,
+            status: req?.body?.status !== undefined ? req?.body?.status : 'Pending'
+        };
+        const result = await createCorporateLeadEnquiryModel(leadData);
+        return res.status(200).json({ status: true, msg: 'Corporate lead enquiry submitted successfully.', lead: result });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+        // Holiday Enquiry - Create (User API 1st Endpoint)
+    }
+})
 
+const createHolidayEnquiry = asyncHandler(async (req, res) => {
+    try {
+        if (!req?.body?.name && !req?.body?.email && !req?.body?.phone) {
+            return res.status(400).json({ status: false, msg: 'Please enter all required contact fields (name, email, or phone).' });
+        }
+        const holidayData = {
+            name: req?.body?.name || null,
+            email: req?.body?.email || null,
+            phone: req?.body?.phone || null,
+            destination: req?.body?.destination || req?.body?.package_name || null,
+            adults: req?.body?.adults || null,
+            children: req?.body?.children || null,
+            travel_date: req?.body?.travel_date || req?.body?.preferred_date || null,
+            budget: req?.body?.budget || null,
+            message: req?.body?.message || null,
+            status: req?.body?.status !== undefined ? req?.body?.status : 'Pending'
+        };
+        const result = await createHolidayEnquiryModel(holidayData);
+        return res.status(200).json({ status: true, msg: 'Holiday enquiry submitted successfully.', enquiry: result });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
 
+const createContactQuery = asyncHandler(async (req, res) => {
+    try {
+        const { full_name, email, phone_number, subject, message, status } = req?.body || {};
+
+        if (!full_name || !email || !message) {
+            return res.status(400).json({
+                status: false,
+                msg: 'Please enter all required fields: full_name, email, and message.'
+            });
+        }
+
+        const validStatuses = ['new', 'read', 'replied', 'archived'];
+        const queryStatus = status && validStatuses.includes(status) ? status : 'new';
+
+        const contactQueryData = {
+            full_name: full_name.trim(),
+            email: email.trim(),
+            phone_number: phone_number ? phone_number.trim() : null,
+            subject: subject ? subject.trim() : null,
+            message: message.trim(),
+            status: queryStatus
+        };
+
+        const result = await createContactQueryModel(contactQueryData);
+        return res.status(200).json({
+            status: true,
+            msg: 'Contact query submitted successfully.',
+            data: result
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            status: false,
+            msg: 'Something went wrong! Please try again later.'
+        });
+    }
+});
+
+const getContactQueries = asyncHandler(async (req, res) => {
+    try {
+        const queries = await getContactQueriesModel();
+        return res.status(200).json({
+            status: true,
+            msg: 'Contact queries fetched successfully.',
+            data: queries
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            status: false,
+            msg: 'Something went wrong! Please try again later.'
+        });
+    }
+});
 
 module.exports = {
     placeOrder,
@@ -194,5 +302,9 @@ module.exports = {
     getAllPackage,
     createContact,
     getRecentSearchHistory,
-    getSiteSettings
+    getSiteSettings,
+    createCorporateLeadEnquiry,
+    createHolidayEnquiry,
+    createContactQuery,
+    getContactQueries
 }

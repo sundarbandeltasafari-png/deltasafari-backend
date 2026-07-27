@@ -1,162 +1,21 @@
 const asyncHandler = require('express-async-handler');
 const md5 = require('md5');
-const { getAllContactsModel } = require('../../../model/admin/service/adminServiceModel');
-// const { getStudyProfileModel, getAllLanguagesModel, createLanguageModel, setLanguageModel, deleteLanguageModel, createStudyProfileModel, setStudyProfileModel, deleteStudyProfileModel, createSubjectModel, setSubjectModel, deleteSubjectModel, getAllSubjectsModel, getAllSubscriptionModel, createSubscriptionModel, setSubscriptionModel, deleteSubscriptionModel, getUserSubscriptionsModel, getSearchHistoryModel, getSubscriptionsModel, getDashboardSubscriptionModel, getDashboardSubscriptionModelByDate, getDashboardSearchModel, getDashboardSearchModelByDate, getDashboardSearchModelOccurance, getAllContactsModel } = require('../../../model/admin/service/adminServiceModel');
+const { 
+    getAllContactsModel,
+    getAllCorporateLeadEnquiriesModel,
+    getParticularCorporateLeadEnquiryModel,
+    updateCorporateLeadEnquiryModel,
+    getAdminDashboardStatsModel,
+    getAllHolidayEnquiriesModel,
+    getParticularHolidayEnquiryModel,
+    updateHolidayEnquiryModel,
+    getAllContactQueriesAdminModel,
+    getParticularContactQueryAdminModel,
+    updateContactQueryAdminModel,
+    deleteContactQueryAdminModel
+} = require('../../../model/admin/service/adminServiceModel');
 
-// // Subscriptions
-// const getAllSubscriptionPackage = asyncHandler(async (req, res) => {
-//     try {
-//         const subscriptions = await getAllSubscriptionModel();
-//         return res.status(200).json({ status: true, msg: 'All Subscriptions..', subscriptions: subscriptions })
-//     } catch (error) {
-//         console.log(error)
-//         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-//     }
-// })
-
-// const createSubscriptionPackage = asyncHandler(async (req, res) => {
-//     try {
-//         if (!req?.body) {
-//             return res.status(400).json({ status: false, msg: 'Please enter a valid subscription.' })
-//         }
-//         // console.log(req?.body)
-//         const subscriptions = await createSubscriptionModel(req?.body);
-//         return res.status(200).json({ status: true, msg: 'subscription created successfully..', subscriptions: subscriptions })
-//     } catch (error) {
-//         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-//     }
-// })
-
-// const setSubscriptionPackage = asyncHandler(async (req, res) => {
-//     try {
-//         if (!req?.body) {
-//             return res.status(400).json({ status: false, msg: 'Please enter a valid subscription.' })
-//         }
-//         const subscriptions = await setSubscriptionModel(req?.body, req?.body?.id);
-//         return res.status(200).json({ status: true, msg: 'subscription update successfully.', subscriptions: subscriptions })
-//     } catch (error) {
-//         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-//     }
-// })
-
-// const deleteSubscriptionPackage = asyncHandler(async (req, res) => {
-//     try {
-//         if (!req?.body?.id) {
-//             return res.status(400).json({ status: false, msg: 'Please enter a valid subscription id.' })
-//         }
-//         const subscriptions = await deleteSubscriptionModel(req?.body?.id);
-//         return res.status(200).json({ status: true, msg: 'subscription update successfully.', subscriptions: subscriptions })
-//     } catch (error) {
-//         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-//     }
-// })
-
-// const userDetails = asyncHandler(async (req, res) => {
-//     try {
-//         if (!req?.body?.id) {
-//             return res.status(400).json({ status: false, msg: 'Please enter a valid user id.' })
-//         }
-//         const userData = await getParticularUserById(req?.body?.id);
-//         // const userSubscription = await getUserSubscriptionModel(req?.body?.id);
-//         return res.status(200).json({ status: true, msg: 'User Details fetched successfully.', userDetails: { ...userData[0], password: '' } })
-//     } catch (error) {
-//         // console.log(error)
-//         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-//     }
-// })
-
-// const getUserSubscriptionHistory = asyncHandler(async (req, res) => {
-//     try {
-//         if (!req?.body?.id) {
-//             return res.status(400).json({ status: false, msg: 'Please enter a valid user id.' })
-//         }
-//         const subscriptionHistory = await getUserSubscriptionsModel(req?.body?.id);
-//         return res.status(200).json({ status: true, msg: 'User Subscriptions.', subscriptionHistory: subscriptionHistory })
-//     } catch (error) {
-//         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-//     }
-// })
-
-// const getUserSubscription = asyncHandler(async (req, res) => {
-//     try {
-//         if (!req?.body?.id) {
-//             return res.status(400).json({ status: false, msg: 'Please enter a valid user id.' })
-//         }
-//         const mysubscription = await getUserSubscriptionModel(req?.body?.id);
-//         // const currentPackage = await 
-//         return res.status(200).json({ status: true, msg: 'User Subscriptions.', subscription: mysubscription.length > 0 ? mysubscription[0] : null })
-
-//     } catch (error) {
-//         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-//     }
-// })
-
-// const getUserSearchHistory = asyncHandler(async (req, res) => {
-//     try {
-//         if (!req?.body?.id) {
-//             return res.status(400).json({ status: false, msg: 'Please enter a valid user id.' })
-//         }
-//         const history = await getSearchHistoryModel(req?.body?.id);
-//         return res.status(200).json({ status: true, msg: 'All Search Histories..', history: history })
-//     } catch (error) {
-//         console.log(error)
-//         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-//     }
-// })
-
-// const getSubscriptionHistory = asyncHandler(async (req, res) => {
-//     try {
-//         const subscriptionHistory = await getSubscriptionsModel();
-//         // console.log(subscriptionHistory)
-//         return res.status(200).json({ status: true, msg: 'User Subscriptions.', subscriptionHistory: subscriptionHistory })
-//     } catch (error) {
-//         console.log(error)
-//         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-//     }
-// })
-
-// const getAdminDashboard = asyncHandler(async (req, res) => {
-//     try {
-//         if (req?.user) {
-//             const users = await getAllUsersModel();
-//             // console.log(users)
-//             const date = new Date()
-//             const subscription = await getDashboardSubscriptionModel();
-//             const subscriptionByYearDate = await getDashboardSubscriptionModelByDate(date.getFullYear());
-//             const subscriptionByMonthDate = await getDashboardSubscriptionModelByDate(`${date.getFullYear()}-${date.getMonth() + 1 > 9 ? (date.getMonth() + 1) : "0" + (date.getMonth() + 1)}`);
-//             const dashboardSearch = await getDashboardSearchModel();
-//             const dashboardSearchByYearDate = await getDashboardSearchModelByDate(date.getFullYear());
-//             const dashboardSearchByPreviousYearDate = await getDashboardSearchModelByDate(date.getFullYear()-1);
-//             const dashboardSearchByMonthDate = await getDashboardSearchModelByDate(`${date.getFullYear()}-${date.getMonth() + 1 > 9 ? (date.getMonth() + 1) : "0" + (date.getMonth() + 1)}`);
-//             const dashboardSearchOccuranceMedium = await getDashboardSearchModelOccurance('medium');
-//             const dashboardSearchOccuranceGrade = await getDashboardSearchModelOccurance('grade');
-//             const dashboardSearchOccuranceSubject = await getDashboardSearchModelOccurance('subject');
-    
-//             const adminDashboardObj = {
-//                 total_users: users.length,
-//                 total_subscriptions: subscription[0]?.total,
-//                 total_income: subscription[0]?.amount,
-//                 total_subscription_year: subscriptionByYearDate[0]?.amount,
-//                 total_subscription_month: subscriptionByMonthDate[0]?.amount,
-//                 total_dashboardSearch: dashboardSearch[0].total,
-//                 total_dashboardSearch_year: dashboardSearchByYearDate[0]?.total,
-//                 total_dashboardSearch_previous_year: dashboardSearchByPreviousYearDate[0]?.total,
-//                 total_dashboardSearch_month: dashboardSearchByMonthDate[0]?.total,
-//                 total_medium: dashboardSearchOccuranceMedium,
-//                 total_grade: dashboardSearchOccuranceGrade,
-//                 total_subject: dashboardSearchOccuranceSubject,
-//             }
-//             return res.status(200).json({ status: true, msg: 'All Search Histories..', adminDashboardObj: adminDashboardObj })
-//         } else {
-//             return res.status(400).json({ status: false, msg: 'User not found!' });
-//         }
-//     } catch (error) {
-//         console.log(error)
-//         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
-//     }
-// })
-
-//  Contact list
+// Contact list
 const getAllContactList = asyncHandler(async (req, res) => {
     try {
         const contacts = await getAllContactsModel();
@@ -167,29 +26,226 @@ const getAllContactList = asyncHandler(async (req, res) => {
     }
 })
 
+// 2nd API: View all corporate lead enquiries for admin
+const getAllCorporateLeadEnquiries = asyncHandler(async (req, res) => {
+    try {
+        const leads = await getAllCorporateLeadEnquiriesModel();
+        return res.status(200).json({ status: true, msg: 'All corporate lead enquiries fetched successfully.', leads: leads })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
+    }
+})
+
+// 3rd API: View a particular corporate lead enquiry by ID
+const getParticularCorporateLeadEnquiry = asyncHandler(async (req, res) => {
+    try {
+        const id = req?.query?.id || req?.body?.id;
+        if (!id) {
+            return res.status(400).json({ status: false, msg: 'Please enter a valid corporate lead enquiry ID.' })
+        }
+        const lead = await getParticularCorporateLeadEnquiryModel(id);
+        if (!lead || lead.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Corporate lead enquiry not found.' });
+        }
+        return res.status(200).json({ status: true, msg: 'Corporate lead enquiry fetched successfully.', lead: lead[0] })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
+    }
+})
+
+// 4th API: Edit or change status of a corporate lead enquiry
+const updateCorporateLeadEnquiry = asyncHandler(async (req, res) => {
+    try {
+        const id = req?.body?.id || req?.query?.id;
+        if (!id) {
+            return res.status(400).json({ status: false, msg: 'Please enter a valid corporate lead enquiry ID.' })
+        }
+        const existingLead = await getParticularCorporateLeadEnquiryModel(id);
+        if (!existingLead || existingLead.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Corporate lead enquiry not found.' });
+        }
+
+        const updateData = { ...req.body };
+        delete updateData.id;
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ status: false, msg: 'Please enter details to update.' });
+        }
+
+        const result = await updateCorporateLeadEnquiryModel(updateData, id);
+        return res.status(200).json({ status: true, msg: 'Corporate lead enquiry updated successfully.', result: result })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
+    }
+})
+
+// --- Holiday Enquiries (Admin APIs) ---
+
+// 2nd API: List all holiday enquiries for admin
+const getAllHolidayEnquiries = asyncHandler(async (req, res) => {
+    try {
+        const enquiries = await getAllHolidayEnquiriesModel();
+        return res.status(200).json({ status: true, msg: 'All holiday enquiries fetched successfully.', enquiries: enquiries });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
+
+// 3rd API: View details of a particular holiday enquiry by ID
+const getParticularHolidayEnquiry = asyncHandler(async (req, res) => {
+    try {
+        const id = req?.query?.id || req?.body?.id;
+        if (!id) {
+            return res.status(400).json({ status: false, msg: 'Please enter a valid holiday enquiry ID.' });
+        }
+        const enquiry = await getParticularHolidayEnquiryModel(id);
+        if (!enquiry || enquiry.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Holiday enquiry not found.' });
+        }
+        return res.status(200).json({ status: true, msg: 'Holiday enquiry fetched successfully.', enquiry: enquiry[0] });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
+
+// 4th API: Edit or change status of a holiday enquiry
+const updateHolidayEnquiry = asyncHandler(async (req, res) => {
+    try {
+        const id = req?.body?.id || req?.query?.id;
+        if (!id) {
+            return res.status(400).json({ status: false, msg: 'Please enter a valid holiday enquiry ID.' });
+        }
+        const existingEnquiry = await getParticularHolidayEnquiryModel(id);
+        if (!existingEnquiry || existingEnquiry.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Holiday enquiry not found.' });
+        }
+
+        const updateData = { ...req.body };
+        delete updateData.id;
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ status: false, msg: 'Please enter details to update.' });
+        }
+
+        const result = await updateHolidayEnquiryModel(updateData, id);
+        return res.status(200).json({ status: true, msg: 'Holiday enquiry updated successfully.', result: result });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
+
+// Dashboard API: Overview metrics & recent activities
+const getAdminDashboard = asyncHandler(async (req, res) => {
+    try {
+        const timeframe = req.query?.timeframe || req.body?.timeframe || '6m';
+        const dashboardData = await getAdminDashboardStatsModel(timeframe);
+        return res.status(200).json({
+            status: true,
+            message: 'Dashboard analytics retrieved successfully',
+            msg: 'Dashboard analytics retrieved successfully',
+            data: dashboardData
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
+
+// --- Contact Queries (Admin APIs) ---
+
+// 1. Get all contact queries
+const getAllContactQueriesAdmin = asyncHandler(async (req, res) => {
+    try {
+        const queries = await getAllContactQueriesAdminModel();
+        return res.status(200).json({ status: true, msg: 'All contact queries fetched successfully.', data: queries });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
+
+// 2. Get a particular contact query by ID
+const getParticularContactQueryAdmin = asyncHandler(async (req, res) => {
+    try {
+        const id = req?.query?.id || req?.body?.id;
+        if (!id) {
+            return res.status(400).json({ status: false, msg: 'Please enter a valid contact query ID.' });
+        }
+        const query = await getParticularContactQueryAdminModel(id);
+        if (!query || query.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Contact query not found.' });
+        }
+        return res.status(200).json({ status: true, msg: 'Contact query fetched successfully.', data: query[0] });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
+
+// 3. Update contact query details/status (e.g. status: 'new' | 'read' | 'replied' | 'archived')
+const updateContactQueryAdmin = asyncHandler(async (req, res) => {
+    try {
+        const id = req?.body?.id || req?.query?.id;
+        if (!id) {
+            return res.status(400).json({ status: false, msg: 'Please enter a valid contact query ID.' });
+        }
+        const existingQuery = await getParticularContactQueryAdminModel(id);
+        if (!existingQuery || existingQuery.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Contact query not found.' });
+        }
+
+        const updateData = { ...req.body };
+        delete updateData.id;
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ status: false, msg: 'Please enter details to update.' });
+        }
+
+        const result = await updateContactQueryAdminModel(updateData, id);
+        return res.status(200).json({ status: true, msg: 'Contact query updated successfully.', result: result });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
+
+// 4. Delete a contact query
+const deleteContactQueryAdmin = asyncHandler(async (req, res) => {
+    try {
+        const id = req?.body?.id || req?.query?.id;
+        if (!id) {
+            return res.status(400).json({ status: false, msg: 'Please enter a valid contact query ID.' });
+        }
+        const existingQuery = await getParticularContactQueryAdminModel(id);
+        if (!existingQuery || existingQuery.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Contact query not found.' });
+        }
+
+        const result = await deleteContactQueryAdminModel(id);
+        return res.status(200).json({ status: true, msg: 'Contact query deleted successfully.', result: result });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
 
 module.exports = {
-    // getStudyProfile,
-    // getAllLanguage,
-    // createLanguage,
-    // setLanguage,
-    // deleteLanguage,
-    // createStudyProfile,
-    // setStudyProfile,
-    // deleteStudyProfile,
-    // getAllSubject,
-    // createSubject,
-    // setSubject,
-    // deleteSubject,
-    // getAllSubscriptionPackage,
-    // createSubscriptionPackage,
-    // setSubscriptionPackage,
-    // deleteSubscriptionPackage,
-    // userDetails,
-    // getUserSubscriptionHistory,
-    // getUserSearchHistory,
-    // getSubscriptionHistory,
-    // getAdminDashboard,
-    // getUserSubscription,
-    getAllContactList
+    getAllContactList,
+    getAllCorporateLeadEnquiries,
+    getParticularCorporateLeadEnquiry,
+    updateCorporateLeadEnquiry,
+    getAllHolidayEnquiries,
+    getParticularHolidayEnquiry,
+    updateHolidayEnquiry,
+    getAdminDashboard,
+    getAllContactQueriesAdmin,
+    getParticularContactQueryAdmin,
+    updateContactQueryAdmin,
+    deleteContactQueryAdmin
 }

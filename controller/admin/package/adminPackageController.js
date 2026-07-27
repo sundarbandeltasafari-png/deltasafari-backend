@@ -1,6 +1,8 @@
 const asyncHandler = require('express-async-handler');
 const md5 = require('md5');
-const { getAllPackageTypesModel, createPackageModel, createPackageAssetsModel, createPackageItinerariesModel, createPackagePoliciesModel, getAllPackageModel, getAllPackageItinerariesModel, getAllPackageAssetsModel, getAllPackagePoliciesModel, setPackageModel, getParticularPackageModel, deletePoliciesModel, deleteItinerariesModel, deleteAssets, deletePackageModel, getAllBookingsModel } = require('../../../model/admin/package/adminPackageModel');
+const fs = require('fs');
+const path = require('path');
+const { getAllPackageTypesModel, createPackageModel, createPackageAssetsModel, createPackageItinerariesModel, createPackagePoliciesModel, getAllPackageModel, getAllPackageItinerariesModel, getAllPackageAssetsModel, getAllPackagePoliciesModel, setPackageModel, getParticularPackageModel, deletePoliciesModel, deleteItinerariesModel, deleteAssets, deletePackageModel, getAllBookingsModel, getRawPackageByIdModel } = require('../../../model/admin/package/adminPackageModel');
 const slugify = require('slugify');
 const { urlDecode } = require('../../../helper/urlHelper');
 const { deleteFile } = require('../../../helper/deleteHelper');
@@ -47,9 +49,10 @@ const createPackage = asyncHandler(async (req, res, next) => {
 
         const itinerariesResponse = body?.days && body?.days?.length > 0 && Promise.all(body?.days?.map(async (dayData) => {
             const day = JSON.parse(dayData)
+            const dayNumber = day?.dayNumber || day?.day_number;
             const itineraries = {
                 package_id: package.insertId,
-                day_number: day?.dayNumber,
+                day_number: dayNumber,
                 title: day?.title,
                 roadmap: JSON.stringify(day?.roadmap),
                 details: day?.details
@@ -148,9 +151,10 @@ const editPackage = asyncHandler(async (req, res, next) => {
         const deleteItineraries = await deleteItinerariesModel({ package_id: packageId });
         const itinerariesResponse = deleteItineraries && body?.days && body?.days?.length > 0 && Promise.all(body?.days?.map(async (dayData) => {
             const day = JSON.parse(dayData)
+            const dayNumber = day?.dayNumber || day?.day_number
             const itineraries = {
                 package_id: packageId,
-                day_number: day?.dayNumber,
+                day_number: dayNumber,
                 title: day?.title,
                 roadmap: JSON.stringify(day?.roadmap),
                 details: day?.details
@@ -224,6 +228,104 @@ const getAllBookings = asyncHandler(async (req, res, next) => {
     }
 })
 
+const duplicatePackage = asyncHandler(async (req, res, next) => {
+    try {
+        let packageId = req?.body?.id || req?.query?.id || req?.body?.package_id || req?.query?.package_id;
+        if (!packageId) {
+            return res.status(400).json({ status: false, msg: 'Please provide a valid package ID to duplicate.' });
+        }
+
+        if (isNaN(packageId)) {
+            try {
+                const decoded = urlDecode(packageId);
+                if (decoded) packageId = decoded;
+            } catch (e) {
+                // Keep original packageId if decoding fails
+            }
+        }
+
+        // Fetch original package row
+        const rawPackageData = await getRawPackageByIdModel(packageId);
+        if (!rawPackageData || rawPackageData.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Original package not found!' });
+        }
+
+        const originalPackage = rawPackageData[0];
+
+        // Omit id and timestamp fields from payload
+        const { id, created_at, updated_at, created_on, updated_on, ...packagePayload } = originalPackage;
+
+        const newTitle = req?.body?.title || `${packagePayload.title || 'Package'} (Copy)`;
+        packagePayload.title = newTitle;
+        packagePayload.slug = slugify(newTitle, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }) + '-' + Date.now();
+
+        // Insert duplicated package
+        const newPackage = await createPackageModel(packagePayload);
+        const newPackageId = newPackage?.insertId;
+
+        if (!newPackageId) {
+            return res.status(500).json({ status: false, msg: 'Failed to create duplicate package.' });
+        }
+
+        // Duplicate itineraries
+        const itineraries = await getAllPackageItinerariesModel({ package_id: packageId });
+        if (itineraries && itineraries.length > 0) {
+            await Promise.all(itineraries.map(async (item) => {
+                const { id, created_at, updated_at, created_on, updated_on, package_id, ...itinData } = item;
+                itinData.package_id = newPackageId;
+                return await createPackageItinerariesModel(itinData);
+            }));
+        }
+
+        // Duplicate policies
+        const policies = await getAllPackagePoliciesModel({ package_id: packageId });
+        if (policies && policies.length > 0) {
+            await Promise.all(policies.map(async (item) => {
+                const { id, created_at, updated_at, created_on, updated_on, package_id, ...polData } = item;
+                polData.package_id = newPackageId;
+                return await createPackagePoliciesModel(polData);
+            }));
+        }
+
+        // Duplicate assets
+        const assets = await getAllPackageAssetsModel({ package_id: packageId });
+        if (assets && assets.length > 0) {
+            await Promise.all(assets.map(async (item) => {
+                const { id, created_at, updated_at, created_on, updated_on, package_id, ...assetData } = item;
+                assetData.package_id = newPackageId;
+
+                if (assetData.path) {
+                    try {
+                        if (fs.existsSync(assetData.path)) {
+                            const ext = path.extname(assetData.path);
+                            const dir = path.dirname(assetData.path);
+                            const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+                            const newFileName = `${uniqueSuffix}${ext}`;
+                            const newFilePath = path.join(dir, newFileName);
+
+                            await fs.promises.copyFile(assetData.path, newFilePath);
+                            assetData.path = newFilePath;
+                        }
+                    } catch (fileErr) {
+                        console.error('Error copying asset file during package duplication:', fileErr);
+                    }
+                }
+
+                return await createPackageAssetsModel(assetData);
+            }));
+        }
+
+        return res.status(200).json({
+            status: true,
+            msg: 'Package duplicated successfully.',
+            newPackageId: newPackageId,
+            newPackageTitle: newTitle
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 module.exports = {
     getAllPackageType,
     createPackage,
@@ -231,5 +333,6 @@ module.exports = {
     getParticularPackage,
     editPackage,
     deletePackage,
-    getAllBookings
+    getAllBookings,
+    duplicatePackage
 }

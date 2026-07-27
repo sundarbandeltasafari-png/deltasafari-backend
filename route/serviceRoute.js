@@ -1,10 +1,10 @@
 const express = require('express');
 const {authMiddleWare} = require('../middleware/middleware');
-const { placeOrder, verifyOrder, getAllPackage, createContact, getRecentSearchHistory, getSiteSettings } = require('../controller/service/serviceController');
+const { placeOrder, verifyOrder, getAllPackage, createContact, getRecentSearchHistory, getSiteSettings, createCorporateLeadEnquiry, createHolidayEnquiry, createContactQuery, getContactQueries } = require('../controller/service/serviceController');
 const { getAllPost, getCategory, getParticularPost, getPostByCategory } = require('../controller/service/postController');
 const { getAllPages, getParticularPage, getFaqPage, getSearchBlogs, getParticularBlog, getAllBlogs, getTotalCategoryBlogs, getTrendingBlogs } = require('../controller/service/pageController');
 const { getHomeDestination, getContactDetails, getHomePosts } = require('../controller/service/commonController');
-const { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages, getCities, getAllPackageType } = require('../controller/service/packageControler');
+const { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages, getCities, getAllCities, getAllPackageType, searchAll } = require('../controller/service/packageControler');
 const router = express.Router();
 
 router.route('/placeOrder').post(authMiddleWare, placeOrder);
@@ -14,6 +14,16 @@ router.route('/getAllPackage').get(getAllPackage);
 
 router.route('/getRecentSearchHistory').get(authMiddleWare, getRecentSearchHistory); 
 router.route('/createContact').post(createContact);
+
+// Contact Query Routes
+router.route('/createContactQuery').post(createContactQuery).get(getContactQueries);
+router.route('/contact-query').post(createContactQuery).get(getContactQueries);
+
+// Corporate Lead Enquiry Route (User)
+router.route('/createCorporateLeadEnquiry').post(createCorporateLeadEnquiry);
+
+// Holiday Enquiry Route (User 1st Endpoint)
+router.route('/createHolidayEnquiry').post(createHolidayEnquiry);
 
 
 
@@ -62,9 +72,14 @@ router.route('/getDestinations').post(getDestinations);
 
 // Cities
 router.route('/getCities').post(getCities);
+router.route('/getAllCities').post(getAllCities);
 
 // Bookings
 router.route('/createBookings').post(createBookings);
+
+// Global Search across cities, zones, and packages
+router.route('/search').get(searchAll).post(searchAll);
+router.route('/searchAll').get(searchAll).post(searchAll);
 
 
 module.exports = router

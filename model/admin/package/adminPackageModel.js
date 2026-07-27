@@ -293,6 +293,21 @@ function getAllBookingsModel() {
     })
 }
 
+function getRawPackageByIdModel(id) {
+    return new Promise((resolve, reject) => {
+        connection.query('SELECT * FROM packages_master WHERE id = ?', [id], (err, rows) => {
+            if (err) {
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    });
+}
+
 module.exports = {
     getParticulrPackageModel,
     createPackageModel,
@@ -310,5 +325,6 @@ module.exports = {
     deletePoliciesModel,
     deleteAssets,
     deletePackageModel,
-    getAllBookingsModel
+    getAllBookingsModel,
+    getRawPackageByIdModel
 }

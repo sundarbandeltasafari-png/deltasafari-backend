@@ -207,6 +207,70 @@ function getOfficesConditionModel(condition) {
     })
 }
 
+function createCorporateLeadEnquiryModel(corporateData) {
+    return new Promise((resolve, reject) => {
+        connection.query('INSERT INTO corporate_lead_enquiries SET ?', corporateData, (err, rows) => {
+            if (err) {
+                console.error('Error inserting corporate lead enquiry:', err);
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    });
+}
+
+function createHolidayEnquiryModel(holidayData) {
+    return new Promise((resolve, reject) => {
+        connection.query('INSERT INTO holiday_enquiries SET ?', holidayData, (err, rows) => {
+            if (err) {
+                console.error('Error inserting holiday enquiry:', err);
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    });
+}
+
+function createContactQueryModel(contactQueryData) {
+    return new Promise((resolve, reject) => {
+        connection.query('INSERT INTO contact_queries SET ?', contactQueryData, (err, rows) => {
+            if (err) {
+                console.error('Error inserting contact query:', err);
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    });
+}
+
+function getContactQueriesModel() {
+    return new Promise((resolve, reject) => {
+        connection.query('SELECT * FROM contact_queries ORDER BY id DESC', (err, rows) => {
+            if (err) {
+                console.error('Error fetching contact queries:', err);
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    });
+}
+
 module.exports = {
     getAllPackagesModel, 
     getAllPackagesDetails, 
@@ -220,5 +284,9 @@ module.exports = {
     getRecentSearchHistoryModel,
     getSiteSettingsConditionModel,
     getContactChannelsConditionModel,
-    getOfficesConditionModel
+    getOfficesConditionModel,
+    createCorporateLeadEnquiryModel,
+    createHolidayEnquiryModel,
+    createContactQueryModel,
+    getContactQueriesModel
 }

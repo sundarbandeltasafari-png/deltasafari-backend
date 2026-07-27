@@ -1,6 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const md5 = require('md5');
-const { getHomePackagesModel, getDestinationsModel, getAllPackageItinerariesModel, getAllPackagePoliciesModel, getParticularPackageModel, createBookingsModel, getFilteredPackagesModel, getCitiesModel, getAllPackageTypesModel } = require('../../model/service/packageModel');
+const { getHomePackagesModel, getDestinationsModel, getAllPackageItinerariesModel, getAllPackagePoliciesModel, getParticularPackageModel, createBookingsModel, getFilteredPackagesModel, getCitiesModel, getAllCitiesModel, getAllPackageTypesModel, searchAllModel } = require('../../model/service/packageModel');
 const { urlDecode } = require('../../helper/urlHelper');
 const { getAllPackageAssetsModel } = require('../../model/admin/package/adminPackageModel');
 
@@ -48,6 +48,17 @@ const getCities = asyncHandler(async (req, res) => {
         const cities = await getCitiesModel(req?.body?.condition);
         console.log(cities);
         
+        return res.status(200).json({ status: true, msg: 'All cities...', cities: cities })
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
+    }
+})
+
+const getAllCities = asyncHandler(async (req, res) => {
+    try {
+        const condition = req?.body?.condition || (req?.body && Object.keys(req.body).length > 0 ? req.body : undefined);
+        const cities = await getAllCitiesModel(condition);
         return res.status(200).json({ status: true, msg: 'All cities...', cities: cities })
     } catch (error) {
         console.log(error);
@@ -110,6 +121,38 @@ const getFilteredPackages = asyncHandler(async (req, res, next) => {
     }
 })
 
+const searchAll = asyncHandler(async (req, res, next) => {
+    try {
+        const search = req?.query?.search || req?.query?.q || req?.body?.search || req?.body?.q || req?.body?.searchData || '';
+        
+        if (!search || search.toString().trim() === '') {
+            return res.status(200).json({ 
+                status: true, 
+                msg: 'Search query is empty.', 
+                results: [],
+                groupedResults: { cities: [], zones: [], packages: [] }
+            });
+        }
+
+        const results = await searchAllModel(search.toString().trim());
+        
+        const groupedResults = {
+            cities: results.filter(item => item.type === 'city'),
+            zones: results.filter(item => item.type === 'zone'),
+            packages: results.filter(item => item.type === 'package')
+        };
+
+        return res.status(200).json({ 
+            status: true, 
+            msg: 'Search results fetched successfully.', 
+            results: results,
+            groupedResults: groupedResults 
+        });
+    } catch (error) {
+        next(error);
+    }
+})
 
 
-module.exports = { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages, getCities, getAllPackageType }
+
+module.exports = { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages, getCities, getAllCities, getAllPackageType, searchAll }

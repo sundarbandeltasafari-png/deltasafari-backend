@@ -8,13 +8,15 @@ const cors = require('cors')
 
 const authRoute = require('./route/authRoute');
 const userRoute = require('./route/userRoute');
-const serviceRoute = require('./route/serviceRoute')
+const serviceRoute = require('./route/serviceRoute');
+const contactQueryRoute = require('./route/contactQueryRoute');
 
 const adminAuthRoute = require('./route/admin/adminAuthRoute');
 const adminUserRoute = require('./route/admin/adminUserRoute');
 const adminServiceRoute = require('./route/admin/adminServiceRoute');
 const adminPackageRoute = require('./route/admin/adminPackageRoute');
 const adminSettingsRoute = require('./route/admin/adminSettingsRoute');
+const adminContactQueryRoute = require('./route/admin/adminContactQueryRoute');
 
 const errorHandler = require('./middleware/errorHandler');
 const connection = require('./Connection');
@@ -56,14 +58,17 @@ app.get('/', async (req, res) => {
 app.use('/auth', authRoute)
 app.use('/user', userRoute)
 app.use('/service', serviceRoute)
+app.use('/contact-query', contactQueryRoute)
+app.use('/contact-queries', contactQueryRoute)
 
 // Admin
 app.use('/admin', adminAuthRoute)
 app.use('/admin/user', adminUserRoute)
 app.use('/admin/service', adminServiceRoute)
-app.use('/admin/service', adminServiceRoute)
 app.use('/admin/package', adminPackageRoute)
 app.use('/admin/settings', adminSettingsRoute)
+app.use('/admin/contact-query', adminContactQueryRoute)
+app.use('/admin/contact-queries', adminContactQueryRoute)
 
 // 404
 app.use('/{*path}', (req, res) => {

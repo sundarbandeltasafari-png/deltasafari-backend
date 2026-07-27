@@ -68,6 +68,22 @@ function getDestinationsModel(condition){
 function getCitiesModel(condition){
    const customcondition = buildCondition(condition);
     return new Promise((resolve, reject) => {
+        connection.query(`SELECT * FROM cities ${customcondition} ORDER BY RAND() LIMIT 6`, (err, rows) => {
+            if (err) {
+                reject(new Error("Something went worng in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    }) 
+}
+
+function getAllCitiesModel(condition){
+    const customcondition = condition && Object.keys(condition).length > 0 ? buildCondition(condition) : '';
+    return new Promise((resolve, reject) => {
         connection.query(`SELECT * FROM cities ${customcondition} ORDER BY id DESC`, (err, rows) => {
             if (err) {
                 reject(new Error("Something went worng in database!" + err?.message));
@@ -257,6 +273,64 @@ function getFilteredPackagesModel(filters, limit = 5) {
     });
 }
 
+function searchAllModel(searchTerm) {
+    return new Promise((resolve, reject) => {
+        if (!searchTerm || typeof searchTerm !== 'string' || searchTerm.trim() === '') {
+            return resolve([]);
+        }
+        const searchPattern = `%${searchTerm.trim()}%`;
+
+        const citiesQuery = new Promise((res, rej) => {
+            const sql = `SELECT *, 'city' AS type FROM cities WHERE name LIKE ? OR slug LIKE ? ORDER BY id DESC`;
+            connection.query(sql, [searchPattern, searchPattern], (err, rows) => {
+                if (err) return rej(err);
+                const results = rows ? JSON.parse(JSON.stringify(rows)).map(item => ({ ...item, type: 'city' })) : [];
+                res(results);
+            });
+        });
+
+        const zonesQuery = new Promise((res, rej) => {
+            const sql = `SELECT *, 'zone' AS type FROM zone WHERE name LIKE ? OR slug LIKE ? ORDER BY id DESC`;
+            connection.query(sql, [searchPattern, searchPattern], (err, rows) => {
+                if (err) return rej(err);
+                const results = rows ? JSON.parse(JSON.stringify(rows)).map(item => ({ ...item, type: 'zone' })) : [];
+                res(results);
+            });
+        });
+
+        const packagesQuery = new Promise((res, rej) => {
+            const sql = `SELECT packages_master.*, package_assets.path, package_assets.type as asset_type, 
+                               package_types.name as package_type_name, 
+                               to_destination_zone.name as to_destination_name, 
+                               from_destination_zone.name as from_destination_name,
+                               'package' AS type 
+                        FROM packages_master 
+                        LEFT JOIN package_assets ON packages_master.id = package_assets.package_id 
+                        LEFT JOIN package_types ON packages_master.package_type = package_types.id 
+                        LEFT JOIN cities ON packages_master.city = cities.id 
+                        LEFT JOIN zone AS to_destination_zone ON packages_master.to_destination = to_destination_zone.id 
+                        LEFT JOIN zone AS from_destination_zone ON packages_master.from_destination = from_destination_zone.id 
+                        WHERE packages_master.title LIKE ? OR packages_master.slug LIKE ? OR cities.name LIKE ? OR to_destination_zone.name LIKE ?
+                        GROUP BY packages_master.id 
+                        ORDER BY packages_master.id DESC`;
+            connection.query(sql, [searchPattern, searchPattern, searchPattern, searchPattern], (err, rows) => {
+                if (err) return rej(err);
+                const results = rows ? JSON.parse(JSON.stringify(rows)).map(item => ({ ...item, type: 'package' })) : [];
+                res(results);
+            });
+        });
+
+        Promise.all([citiesQuery, zonesQuery, packagesQuery])
+            .then(([cities, zones, packages]) => {
+                const combined = [...cities, ...zones, ...packages];
+                resolve(combined);
+            })
+            .catch(err => {
+                reject(new Error("Something went wrong in search: " + err?.message));
+            });
+    });
+}
+
 
 module.exports = {
     getHomePackagesModel,
@@ -267,5 +341,7 @@ module.exports = {
     createBookingsModel,
     getFilteredPackagesModel,
     getCitiesModel,
-    getAllPackageTypesModel
+    getAllCitiesModel,
+    getAllPackageTypesModel,
+    searchAllModel
 }
