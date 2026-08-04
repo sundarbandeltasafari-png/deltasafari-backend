@@ -1,6 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const md5 = require('md5');
-const { getAllPagesConditionModel, getParticularPagesConditionModel, getAllFaqConditionModel, getAllBlogsConditionModel, getSearchPostsLatestModel, getTotalCategoryBlogsModel, getTrendingBlogsModel, getParticularBlogsConditionModel } = require('../../model/service/pageModel');
+const { getAllPagesConditionModel, getParticularPagesConditionModel, getAllFaqConditionModel, getAllBlogsConditionModel, getSearchPostsLatestModel, getTotalCategoryBlogsModel, getTrendingBlogsModel, getParticularBlogsConditionModel, getPageSeoConditionModel } = require('../../model/service/pageModel');
 const { urlDecode } = require('../../helper/urlHelper');
 
 const getAllPages = asyncHandler(async (req, res, next) => {
@@ -101,4 +101,17 @@ const getTrendingBlogs = asyncHandler(async (req, res, next) => {
     }
 })
 
-module.exports = { getAllPages, getParticularPage, getFaqPage, getAllBlogs, getParticularBlog, getSearchBlogs, getTotalCategoryBlogs, getTrendingBlogs }
+const getPageSeo = asyncHandler(async (req, res, next) => {
+    try {
+        const slug = req.query?.slug || req.query?.page;
+        if (!slug) {
+            return res.status(400).json({ status: false, msg: 'No Page slug/name found.' });
+        }
+        const seo = await getPageSeoConditionModel({ 'page_master.slug': slug });
+        return res.status(200).json({ status: true, msg: 'Page SEO found!', seo: seo });
+    } catch (error) {
+        next(error);
+    }
+});
+
+module.exports = { getAllPages, getParticularPage, getFaqPage, getAllBlogs, getParticularBlog, getSearchBlogs, getTotalCategoryBlogs, getTrendingBlogs, getPageSeo }

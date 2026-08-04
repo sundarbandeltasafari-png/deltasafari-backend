@@ -308,6 +308,28 @@ function getRawPackageByIdModel(id) {
     });
 }
 
+function checkDuplicateSlugModel(slug, excludeId = null, title = null) {
+    return new Promise((resolve, reject) => {
+        let query = 'SELECT id, title, slug FROM packages_master WHERE (slug = ? OR title = ?)';
+        const queryParams = [slug, title || slug];
+
+        if (excludeId) {
+            query += ' AND id != ?';
+            queryParams.push(excludeId);
+        }
+
+        connection.query(query, queryParams, (err, rows) => {
+            if (err) {
+                reject(new Error("Database error while checking duplicate slug: " + err?.message));
+            } else if (rows && rows.length > 0) {
+                resolve(JSON.parse(JSON.stringify(rows[0])));
+            } else {
+                resolve(null);
+            }
+        });
+    });
+}
+
 module.exports = {
     getParticulrPackageModel,
     createPackageModel,
@@ -326,5 +348,6 @@ module.exports = {
     deleteAssets,
     deletePackageModel,
     getAllBookingsModel,
-    getRawPackageByIdModel
+    getRawPackageByIdModel,
+    checkDuplicateSlugModel
 }

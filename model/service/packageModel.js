@@ -332,6 +332,41 @@ function searchAllModel(searchTerm) {
 }
 
 
+function getDiscountedPackagesModel(limit = 6) {
+    const parsedLimit = Number(limit) || 6;
+    return new Promise((resolve, reject) => {
+        const sql = `SELECT packages_master.*, package_assets.path, package_assets.type as asset_type, 
+                           package_types.name as package_type_name, 
+                           to_destination_zone.name as to_destination_name, 
+                           to_destination_zone.slug as to_destination_slug, 
+                           from_destination_zone.name as from_destination_name, 
+                           from_destination_zone.slug as from_destination_slug,
+                           ROUND(((COALESCE(NULLIF(packages_master.mrp_price, 0), packages_master.actual_price * 1.25) - packages_master.actual_price) / COALESCE(NULLIF(packages_master.mrp_price, 0), packages_master.actual_price * 1.25)) * 100) AS discount_percent
+                    FROM packages_master 
+                    LEFT JOIN package_assets ON packages_master.id = package_assets.package_id 
+                    LEFT JOIN package_types ON packages_master.package_type = package_types.id 
+                    LEFT JOIN cities ON packages_master.city = cities.id 
+                    LEFT JOIN zone AS to_destination_zone ON packages_master.to_destination = to_destination_zone.id 
+                    LEFT JOIN zone AS from_destination_zone ON packages_master.from_destination = from_destination_zone.id 
+                    WHERE (package_assets.type = 1 OR package_assets.type IS NULL) 
+                      AND packages_master.actual_price IS NOT NULL AND packages_master.actual_price > 0
+                    GROUP BY packages_master.id 
+                    ORDER BY discount_percent DESC, packages_master.id DESC 
+                    LIMIT ${parsedLimit}`;
+
+        connection.query(sql, (err, rows) => {
+            if (err) {
+                reject(new Error("Something went wrong in database! " + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    });
+}
+
 module.exports = {
     getHomePackagesModel,
     getDestinationsModel,
@@ -343,5 +378,6 @@ module.exports = {
     getCitiesModel,
     getAllCitiesModel,
     getAllPackageTypesModel,
-    searchAllModel
+    searchAllModel,
+    getDiscountedPackagesModel
 }

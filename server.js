@@ -20,6 +20,7 @@ const adminContactQueryRoute = require('./route/admin/adminContactQueryRoute');
 
 const errorHandler = require('./middleware/errorHandler');
 const connection = require('./Connection');
+const { ensureUserMasterColumns } = require('./helper/dbMigration');
 
 connection.connect(function (err) {
     if (err) {
@@ -27,6 +28,7 @@ connection.connect(function (err) {
         return;
     }
     console.log('connected as id ' + connection.threadId);
+    ensureUserMasterColumns();
 });
 
 // var whitelist = ['http://example1.com', 'http://example2.com']

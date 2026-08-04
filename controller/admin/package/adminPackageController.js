@@ -2,7 +2,7 @@ const asyncHandler = require('express-async-handler');
 const md5 = require('md5');
 const fs = require('fs');
 const path = require('path');
-const { getAllPackageTypesModel, createPackageModel, createPackageAssetsModel, createPackageItinerariesModel, createPackagePoliciesModel, getAllPackageModel, getAllPackageItinerariesModel, getAllPackageAssetsModel, getAllPackagePoliciesModel, setPackageModel, getParticularPackageModel, deletePoliciesModel, deleteItinerariesModel, deleteAssets, deletePackageModel, getAllBookingsModel, getRawPackageByIdModel } = require('../../../model/admin/package/adminPackageModel');
+const { getAllPackageTypesModel, createPackageModel, createPackageAssetsModel, createPackageItinerariesModel, createPackagePoliciesModel, getAllPackageModel, getAllPackageItinerariesModel, getAllPackageAssetsModel, getAllPackagePoliciesModel, setPackageModel, getParticularPackageModel, deletePoliciesModel, deleteItinerariesModel, deleteAssets, deletePackageModel, getAllBookingsModel, getRawPackageByIdModel, checkDuplicateSlugModel } = require('../../../model/admin/package/adminPackageModel');
 const slugify = require('slugify');
 const { urlDecode } = require('../../../helper/urlHelper');
 const { deleteFile } = require('../../../helper/deleteHelper');
@@ -20,6 +20,24 @@ const getAllPackageType = asyncHandler(async (req, res, next) => {
 const createPackage = asyncHandler(async (req, res, next) => {
     try {
         const body = req.body;
+        const generatedSlug = body?.slug
+            ? slugify(body.slug, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true })
+            : (slugify(body?.name || '', { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }) || Date.now().toString());
+
+        // Check if slug or title already exists
+        const existingPackage = await checkDuplicateSlugModel(generatedSlug, null, body?.name);
+        if (existingPackage) {
+            if (req.files) {
+                if (req.files['images[]']) req.files['images[]'].forEach(file => deleteFile(file.path));
+                if (req.files['videos[]']) req.files['videos[]'].forEach(file => deleteFile(file.path));
+            }
+            return res.status(200).json({
+                status: false,
+                isDuplicateSlug: true,
+                msg: `A package with this title or slug already exists ("${existingPackage.title}"). Please choose a unique package title.`
+            });
+        }
+
         const payload = {
             title: body?.name,
             description: body?.description,
@@ -27,7 +45,7 @@ const createPackage = asyncHandler(async (req, res, next) => {
             meta_title: body?.meta_title,
             meta_description: body?.meta_description,
             tags: body?.tags,
-            slug: slugify(body?.name, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }) || Date.now(),
+            slug: generatedSlug,
             to_destination: body?.to_destination,
             from_destination: body?.from_destination,
             duration_days: body?.duration_days,
@@ -115,6 +133,31 @@ const getParticularPackage = asyncHandler(async (req, res, next) => {
 const editPackage = asyncHandler(async (req, res, next) => {
     try {
         const body = req.body;
+        const packageId = urlDecode(body?.package_id);
+        if (!packageId) {
+            const error = new Error('Package is not found. Please edit valid package.');
+            res.status(401);
+            return next(error);
+        }
+
+        const generatedSlug = body?.slug
+            ? slugify(body.slug, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true })
+            : (slugify(body?.name || '', { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }) || Date.now().toString());
+
+        // Check if slug or title already exists for another package
+        const existingPackage = await checkDuplicateSlugModel(generatedSlug, packageId, body?.name);
+        if (existingPackage) {
+            if (req.files) {
+                if (req.files['images[]']) req.files['images[]'].forEach(file => deleteFile(file.path));
+                if (req.files['videos[]']) req.files['videos[]'].forEach(file => deleteFile(file.path));
+            }
+            return res.status(200).json({
+                status: false,
+                isDuplicateSlug: true,
+                msg: `A package with this title or slug already exists ("${existingPackage.title}"). Please choose a unique package title.`
+            });
+        }
+
         const payload = {
             title: body?.name,
             description: body?.description,
@@ -122,7 +165,7 @@ const editPackage = asyncHandler(async (req, res, next) => {
             meta_title: body?.meta_title,
             meta_description: body?.meta_description,
             tags: body?.tags,
-            slug: slugify(body?.name, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }) || Date.now(),
+            slug: generatedSlug,
             to_destination: body?.to_destination,
             from_destination: body?.from_destination,
             duration_days: body?.duration_days,
@@ -135,17 +178,11 @@ const editPackage = asyncHandler(async (req, res, next) => {
             inclusions: JSON.stringify(body?.inclusions),
             exclusions: JSON.stringify(body?.exclusions)
         };
-        const packageId = urlDecode(body?.package_id);
-        if (!packageId) {
-            const error = new Error('Package is not found. Please edit valid package.');
-            res.status(401);
-            next(error);
-        }
         const package = await setPackageModel(payload, { id: packageId });
         if (!package) {
             const error = new Error('Package is not updated. Please add required fields');
             res.status(401);
-            next(error);
+            return next(error);
         }
 
         const deleteItineraries = await deleteItinerariesModel({ package_id: packageId });
@@ -186,7 +223,7 @@ const editPackage = asyncHandler(async (req, res, next) => {
             return await createPackageAssetsModel({ path: videoFile.path, package_id: packageId, type: 2 });
         }));
 
-        return res.status(200).json({ status: true, msg: 'Package has been created successfully.' })
+        return res.status(200).json({ status: true, msg: 'Package has been updated successfully.' })
     } catch (error) {
         next(error)
     }
@@ -256,8 +293,19 @@ const duplicatePackage = asyncHandler(async (req, res, next) => {
         const { id, created_at, updated_at, created_on, updated_on, ...packagePayload } = originalPackage;
 
         const newTitle = req?.body?.title || `${packagePayload.title || 'Package'} (Copy)`;
+        const generatedSlug = slugify(newTitle, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }) || Date.now().toString();
+
+        const existingPackage = await checkDuplicateSlugModel(generatedSlug, null, newTitle);
+        if (existingPackage) {
+            return res.status(200).json({
+                status: false,
+                isDuplicateSlug: true,
+                msg: `A package with the name or slug "${newTitle}" already exists. Please choose a unique title when duplicating.`
+            });
+        }
+
         packagePayload.title = newTitle;
-        packagePayload.slug = slugify(newTitle, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }) + '-' + Date.now();
+        packagePayload.slug = generatedSlug;
 
         // Insert duplicated package
         const newPackage = await createPackageModel(packagePayload);

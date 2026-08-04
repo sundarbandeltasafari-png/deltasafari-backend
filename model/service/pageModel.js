@@ -197,14 +197,30 @@ function getTrendingBlogsModel() {
 
 
 
+function getPageSeoConditionModel(condition) {
+    const customcondition = buildCondition(condition);
+    return new Promise((resolve, reject) => {
+        connection.query(`SELECT seo_master.*, page_master.page_name, page_master.slug FROM page_master LEFT JOIN seo_master ON page_master.id = seo_master.page_id ${customcondition} ORDER BY seo_master.id DESC`, (err, rows) => {
+            if (err) {
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows && rows.length > 0) {
+                resolve(JSON.parse(JSON.stringify(rows))[0]);
+            } else {
+                resolve(null);
+            }
+        });
+    });
+}
+
 module.exports = { 
     getAllPagesConditionModel, 
     getParticularPagesConditionModel, 
     getAllFaqConditionModel, 
     getAllBlogsConditionModel, 
     getParticularBlogsConditionModel, 
-    getParticularBlogsConditionModel, 
     getSearchPostsLatestModel, 
     getTotalCategoryBlogsModel,
-    getTrendingBlogsModel
+    getTrendingBlogsModel,
+    getPageSeoConditionModel
  }

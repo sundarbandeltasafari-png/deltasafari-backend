@@ -2,9 +2,9 @@ const express = require('express');
 const {authMiddleWare} = require('../middleware/middleware');
 const { placeOrder, verifyOrder, getAllPackage, createContact, getRecentSearchHistory, getSiteSettings, createCorporateLeadEnquiry, createHolidayEnquiry, createContactQuery, getContactQueries } = require('../controller/service/serviceController');
 const { getAllPost, getCategory, getParticularPost, getPostByCategory } = require('../controller/service/postController');
-const { getAllPages, getParticularPage, getFaqPage, getSearchBlogs, getParticularBlog, getAllBlogs, getTotalCategoryBlogs, getTrendingBlogs } = require('../controller/service/pageController');
+const { getAllPages, getParticularPage, getFaqPage, getSearchBlogs, getParticularBlog, getAllBlogs, getTotalCategoryBlogs, getTrendingBlogs, getPageSeo } = require('../controller/service/pageController');
 const { getHomeDestination, getContactDetails, getHomePosts } = require('../controller/service/commonController');
-const { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages, getCities, getAllCities, getAllPackageType, searchAll } = require('../controller/service/packageControler');
+const { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages, getCities, getAllCities, getAllPackageType, searchAll, getDiscountedPackages } = require('../controller/service/packageControler');
 const router = express.Router();
 
 router.route('/placeOrder').post(authMiddleWare, placeOrder);
@@ -38,6 +38,7 @@ router.route('/getPostByCategory').get(getPostByCategory);
 router.route('/getPages').get(getAllPages);
 router.route('/getParticularPage').get(getParticularPage);
 router.route('/getFaqPage').get(getFaqPage);
+router.route('/getPageSeo').get(getPageSeo);
 
 
 // Blogs
@@ -65,6 +66,7 @@ router.route('/getAllPackageType').get(getAllPackageType).post(getAllPackageType
 router.route('/getHomePackages').get(getHomePackages);
 router.route('/getParticularPackage').get(getParticularPackage);
 router.route('/filterPackages').get(getFilteredPackages).post(getFilteredPackages);
+router.route('/getDiscountedPackages').get(getDiscountedPackages).post(getDiscountedPackages);
 
 
 // Destinations

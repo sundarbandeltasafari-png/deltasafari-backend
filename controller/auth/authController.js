@@ -3,6 +3,9 @@ const { createUser, setUser, setUserByOtp, getParticularUserDetails } = require(
 const md5 = require('md5');
 const { getToken } = require('../../middleware/jwtMiddleware');
 const { sendOtp, validateEmail, isValidPhoneNumber, generateReferralCode } = require('../../helper/serviceHelper');
+const { OAuth2Client } = require('google-auth-library');
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID ? process.env.GOOGLE_CLIENT_ID.trim() : undefined);
 
 
 const register = asyncHandler(async (req, res) => {
@@ -185,4 +188,94 @@ const loginOtpValidate = asyncHandler(async (req, res) => {
 
 
 
-module.exports = { register, registerOtpValidate, login, loginOtpValidate, resetPasswordLink, resetPassword, resendOtp }
+const googleLogin = asyncHandler(async (req, res) => {
+    try {
+        const body = req?.body || {};
+        const token = body?.token || body?.credential || body?.idToken;
+        const type = Number(body?.type) || 1; // 1 = Customer, 2 = Corporate, 3 = Agent
+
+        let email = body?.email;
+        let first_name = body?.first_name;
+        let last_name = body?.last_name;
+        let google_id = body?.google_id;
+
+        if (!token) {
+            return res.status(400).json({ status: false, msg: 'Google authorization credential/token is required for backend validation.' });
+        }
+
+        // Backend validation of Google ID token with Google's public key certificate
+        try {
+            const ticket = await googleClient.verifyIdToken({
+                idToken: token,
+                audience: process.env.GOOGLE_CLIENT_ID ? process.env.GOOGLE_CLIENT_ID.trim() : undefined
+            });
+            const payload = ticket.getPayload();
+            if (!payload || !payload.email) {
+                return res.status(400).json({ status: false, msg: 'Invalid Google token payload. Email missing from token.' });
+            }
+            if (payload.email_verified === false) {
+                return res.status(400).json({ status: false, msg: 'Google account email is not verified.' });
+            }
+
+            email = payload.email;
+            first_name = payload.given_name || payload.name?.split(' ')[0] || email.split('@')[0];
+            last_name = payload.family_name || payload.name?.split(' ').slice(1).join(' ') || '';
+            google_id = payload.sub;
+        } catch (authErr) {
+            console.error('Google ID token verification failed:', authErr.message);
+            return res.status(401).json({ status: false, msg: `Google OAuth verification failed: ${authErr.message}` });
+        }
+
+        if (!email || !validateEmail(email)) {
+            return res.status(400).json({ status: false, msg: 'Valid email is required for Google login.' });
+        }
+
+        let userList = await getParticularUserDetails({ email: email }, { phone: email });
+        let user;
+
+        if (userList && userList.length > 0) {
+            user = userList[0];
+            if (!user.user_type) {
+                await setUser({ user_type: type }, email);
+                user.user_type = type;
+            }
+        } else {
+            const userData = {
+                first_name: first_name || body?.name?.split(' ')[0] || email.split('@')[0],
+                last_name: last_name || body?.name?.split(' ').slice(1).join(' ') || '',
+                email: email,
+                phone: body?.phone || '',
+                user_type: type,
+                google_id: google_id || '',
+                status: 1
+            };
+            await createUser(userData);
+            const freshUserList = await getParticularUserDetails({ email: email }, { phone: email });
+            user = freshUserList[0] || userData;
+        }
+
+        const userDetails = {
+            id: user?.id,
+            first_name: user?.first_name,
+            last_name: user?.last_name,
+            email: user?.email,
+            phone: user?.phone,
+            user_type: type
+        };
+
+        const loginToken = getToken(userDetails);
+        const typeLabel = type === 1 ? 'Customer' : type === 2 ? 'Corporate' : 'Agent';
+
+        return res.status(200).json({
+            status: true,
+            msg: `Google login successful as ${typeLabel}!`,
+            token: loginToken?.token,
+            userDetails: userDetails
+        });
+    } catch (error) {
+        console.error('Google Auth Error:', error);
+        return res.status(500).json({ status: false, msg: 'Google Auth failed. Please try again.' });
+    }
+});
+
+module.exports = { register, registerOtpValidate, login, loginOtpValidate, resetPasswordLink, resetPassword, resendOtp, googleLogin }

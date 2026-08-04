@@ -1,6 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const md5 = require('md5');
-const { getHomePackagesModel, getDestinationsModel, getAllPackageItinerariesModel, getAllPackagePoliciesModel, getParticularPackageModel, createBookingsModel, getFilteredPackagesModel, getCitiesModel, getAllCitiesModel, getAllPackageTypesModel, searchAllModel } = require('../../model/service/packageModel');
+const { getHomePackagesModel, getDestinationsModel, getAllPackageItinerariesModel, getAllPackagePoliciesModel, getParticularPackageModel, createBookingsModel, getFilteredPackagesModel, getCitiesModel, getAllCitiesModel, getAllPackageTypesModel, searchAllModel, getDiscountedPackagesModel } = require('../../model/service/packageModel');
 const { urlDecode } = require('../../helper/urlHelper');
 const { getAllPackageAssetsModel } = require('../../model/admin/package/adminPackageModel');
 
@@ -69,22 +69,35 @@ const getAllCities = asyncHandler(async (req, res) => {
 const getParticularPackage = asyncHandler(async (req, res, next) => {
     try {
         const packageId = req.query?.id && urlDecode(req?.query?.id);
-        if (!packageId) {
-            return res.status(400).json({ status: false, msg: 'There is no package found!' })
+        const slug = req.query?.slug;
+
+        let packageData = [];
+        if (slug) {
+            packageData = await getParticularPackageModel({ "packages_master.slug": slug });
+            if ((!packageData || packageData.length === 0) && slug) {
+                const decodedSlug = decodeURIComponent(slug);
+                if (decodedSlug !== slug) {
+                    packageData = await getParticularPackageModel({ "packages_master.slug": decodedSlug });
+                }
+            }
         }
-        const packageData = await getParticularPackageModel({ "packages_master.id": packageId });
-        const package = packageData.length > 0 ? packageData[0] : null;
+
+        if ((!packageData || packageData.length === 0) && packageId) {
+            packageData = await getParticularPackageModel({ "packages_master.id": packageId });
+        }
+
+        const package = packageData && packageData.length > 0 ? packageData[0] : null;
         if (!package) {
-            return res.status(400).json({ status: false, msg: 'There is no package found!' })
+            return res.status(400).json({ status: false, msg: 'There is no package found!' });
         }
         package.itineraries = await getAllPackageItinerariesModel({ package_id: package?.id });
         package.assets = await getAllPackageAssetsModel({ package_id: package?.id });
         package.policies = await getAllPackagePoliciesModel({ package_id: package?.id });
-        return res.status(200).json({ status: true, msg: 'Here is your package, book now!', package: package })
+        return res.status(200).json({ status: true, msg: 'Here is your package, book now!', package: package });
     } catch (error) {
-        next(error)
+        next(error);
     }
-})
+});
 
 const createBookings = asyncHandler(async (req, res) => {
     try {
@@ -151,8 +164,16 @@ const searchAll = asyncHandler(async (req, res, next) => {
     } catch (error) {
         next(error);
     }
-})
+});
 
+const getDiscountedPackages = asyncHandler(async (req, res, next) => {
+    try {
+        const limit = req.query?.limit || req.body?.limit || 6;
+        const packages = await getDiscountedPackagesModel(limit);
+        return res.status(200).json({ status: true, msg: 'Discounted packages fetched successfully.', packages: packages });
+    } catch (error) {
+        next(error);
+    }
+});
 
-
-module.exports = { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages, getCities, getAllCities, getAllPackageType, searchAll }
+module.exports = { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages, getCities, getAllCities, getAllPackageType, searchAll, getDiscountedPackages };

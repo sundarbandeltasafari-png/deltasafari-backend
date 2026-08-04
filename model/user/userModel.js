@@ -1,6 +1,7 @@
 
 const connection = require('../../Connection');
 const md5 = require('md5');
+const { buildCondition } = require('../../helper/modelHelper');
 
 function getParticularUser(condition) {
     const customcondition = buildCondition(condition);
