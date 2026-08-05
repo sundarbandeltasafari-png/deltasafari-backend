@@ -20,15 +20,14 @@ const adminContactQueryRoute = require('./route/admin/adminContactQueryRoute');
 
 const errorHandler = require('./middleware/errorHandler');
 const connection = require('./Connection');
-const { ensureUserMasterColumns } = require('./helper/dbMigration');
 
-connection.connect(function (err) {
+connection.getConnection((err, conn) => {
     if (err) {
-        console.error('error connecting: ' + err.stack);
+        console.error('Database connection failed:', err.message);
         return;
     }
-    console.log('connected as id ' + connection.threadId);
-    ensureUserMasterColumns();
+    console.log('Connected to MySQL Database via Pool!');
+    conn.release(); // Return connection back to the pool
 });
 
 // var whitelist = ['http://example1.com', 'http://example2.com']
@@ -48,10 +47,18 @@ app.use(cors({
 
 app.use(cookieParser());
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true })); 
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // Serve files from the "uploads" folder
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const uploadsPath = path.join(__dirname, 'uploads');
+app.use('/uploads', express.static(uploadsPath, {
+    fallthrough: true // Allows Express to pass to next route if file is missing on disk
+}));
+
+console.log("Checking Absolute Static Path:", path.resolve(__dirname, 'uploads'));
+const fs = require('fs');
+console.log("Does folder exist?:", fs.existsSync(path.resolve(__dirname, 'uploads')));
 
 // Frontend
 app.get('/', async (req, res) => {
