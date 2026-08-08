@@ -1,6 +1,6 @@
 const express = require('express');
 const {authMiddleWare} = require('../middleware/middleware');
-const { placeOrder, verifyOrder, getAllPackage, createContact, getRecentSearchHistory, getSiteSettings, createCorporateLeadEnquiry, createHolidayEnquiry, createContactQuery, getContactQueries } = require('../controller/service/serviceController');
+const { placeOrder, verifyOrder, getAllPackage, createContact, getRecentSearchHistory, getSiteSettings, createCorporateLeadEnquiry, createHolidayEnquiry, createContactQuery, getContactQueries, toggleSavePackage, getSavedPackages, checkIsPackageSaved } = require('../controller/service/serviceController');
 const { getAllPost, getCategory, getParticularPost, getPostByCategory } = require('../controller/service/postController');
 const { getAllPages, getParticularPage, getFaqPage, getSearchBlogs, getParticularBlog, getAllBlogs, getTotalCategoryBlogs, getTrendingBlogs, getPageSeo } = require('../controller/service/pageController');
 const { getHomeDestination, getContactDetails, getHomePosts } = require('../controller/service/commonController');
@@ -70,7 +70,7 @@ router.route('/getDiscountedPackages').get(getDiscountedPackages).post(getDiscou
 
 
 // Destinations
-router.route('/getDestinations').post(getDestinations);
+router.route('/getDestinations').get(getDestinations).post(getDestinations);
 
 // Cities
 router.route('/getCities').post(getCities);
@@ -79,9 +79,9 @@ router.route('/getAllCities').post(getAllCities);
 // Bookings
 router.route('/createBookings').post(createBookings);
 
-// Global Search across cities, zones, and packages
-router.route('/search').get(searchAll).post(searchAll);
-router.route('/searchAll').get(searchAll).post(searchAll);
-
+// Saved Packages / Wishlist (User & Agent)
+router.route('/toggleSavePackage').post(toggleSavePackage);
+router.route('/getSavedPackages').get(getSavedPackages).post(getSavedPackages);
+router.route('/checkIsPackageSaved').get(checkIsPackageSaved).post(checkIsPackageSaved);
 
 module.exports = router

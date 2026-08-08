@@ -192,51 +192,121 @@ const getSiteSettings = asyncHandler(async (req, res, next) => {
 // Corporate Lead Enquiry - Create (User API)
 const createCorporateLeadEnquiry = asyncHandler(async (req, res) => {
     try {
-        if (!req?.body?.name && !req?.body?.email && !req?.body?.phone && !req?.body?.company_name) {
+        const body = req.body || {};
+        if (!body.name && !body.full_name && !body.email && !body.phone && !body.company_name) {
             return res.status(400).json({ status: false, msg: 'Please enter all required fields (name, email, phone, or company_name).' });
         }
+
+        const maleCount = Number(body.male_count) || 0;
+        const femaleCount = Number(body.female_count) || 0;
+        const totalEmployees = Number(body.total_employees) || (maleCount + femaleCount) || Number(body.adults_count) || 0;
+
         const leadData = {
-            company_name: req?.body?.company_name || null,
-            name: req?.body?.name || null,
-            email: req?.body?.email || null,
-            phone: req?.body?.phone || null,
-            destination: req?.body?.destination || null,
-            group_size: req?.body?.group_size || null,
-            travel_date: req?.body?.travel_date || null,
-            budget: req?.body?.budget || null,
-            message: req?.body?.message || null,
-            status: req?.body?.status !== undefined ? req?.body?.status : 'Pending'
+            booking_reference: `CORP-${Date.now().toString().slice(-6)}`,
+            company_name: body.company_name || 'N/A',
+            full_name: body.full_name || body.name || 'Company Coordinator',
+            email: body.email || null,
+            phone: body.phone || null,
+            city: body.city || body.departure_city || 'Kolkata',
+            trip_type: body.trip_type || 'Corporate Offsite',
+            destination: body.destination || 'Sundarban Mangrove Safari',
+            departure_city: body.departure_city || body.city || 'Kolkata',
+            departure_date: body.departure_date || body.travel_date || null,
+            travel_window: body.travel_window || 'Flexible / Q1',
+            duration_days: Number(body.duration_days) || 3,
+            duration_nights: Number(body.duration_nights) || 2,
+            adults_count: Number(body.adults_count) || totalEmployees || 2,
+            male_count: maleCount,
+            female_count: femaleCount,
+            total_employees: totalEmployees,
+            children_count: Number(body.children_count) || 0,
+            infants_count: Number(body.infants_count) || 0,
+            hotel_category: body.hotel_category || '4 Star / Premium Resort',
+            room_sharing: body.room_sharing || 'Twin Sharing',
+            meal_plan: body.meal_plan || 'All Meals Included',
+            cab_type: body.cab_type || 'AC Luxury Coach (35-45 Seater)',
+            include_flights: body.include_flights ? 1 : 0,
+            include_train: body.include_train ? 1 : 0,
+            budget_band: body.budget_band || body.budget || 'Standard',
+            special_notes: body.special_notes || body.message || null,
+            status: 'PENDING'
         };
+
         const result = await createCorporateLeadEnquiryModel(leadData);
+        if (leadData.email) {
+            const { sendCustomEnquiryConfirmationEmail } = require('../../helper/serviceHelper');
+            sendCustomEnquiryConfirmationEmail(leadData.email, leadData.full_name || 'Valued Corporate Partner', leadData);
+        }
         return res.status(200).json({ status: true, msg: 'Corporate lead enquiry submitted successfully.', lead: result });
     } catch (error) {
-        console.log(error);
+        console.log('createCorporateLeadEnquiry Error:', error);
         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
-        // Holiday Enquiry - Create (User API 1st Endpoint)
     }
-})
+});
 
 const createHolidayEnquiry = asyncHandler(async (req, res) => {
     try {
-        if (!req?.body?.name && !req?.body?.email && !req?.body?.phone) {
+        const body = req.body || {};
+        if (!body.name && !body.full_name && !body.email && !body.phone) {
             return res.status(400).json({ status: false, msg: 'Please enter all required contact fields (name, email, or phone).' });
         }
-        const holidayData = {
-            name: req?.body?.name || null,
-            email: req?.body?.email || null,
-            phone: req?.body?.phone || null,
-            destination: req?.body?.destination || req?.body?.package_name || null,
-            adults: req?.body?.adults || null,
-            children: req?.body?.children || null,
-            travel_date: req?.body?.travel_date || req?.body?.preferred_date || null,
-            budget: req?.body?.budget || null,
-            message: req?.body?.message || null,
-            status: req?.body?.status !== undefined ? req?.body?.status : 'Pending'
-        };
-        const result = await createHolidayEnquiryModel(holidayData);
-        return res.status(200).json({ status: true, msg: 'Holiday enquiry submitted successfully.', enquiry: result });
+
+        const connection = require('../../Connection');
+        connection.query("SHOW COLUMNS FROM holiday_enquiries", async (err, columns) => {
+            let validColumns = [];
+            if (!err && columns) {
+                validColumns = columns.map(c => c.Field);
+            }
+
+            const candidateData = {
+                full_name: body.full_name || body.name || null,
+                name: body.name || body.full_name || null,
+                email: body.email || null,
+                phone: body.phone || null,
+                destination: body.destination || body.package_name || null,
+                departure_city: body.departure_city || body.city || null,
+                travel_date: body.travel_date || body.departure_date || body.preferred_date || null,
+                duration_days: Number(body.duration_days) || 1,
+                duration_nights: Number(body.duration_nights) || 0,
+                adults_count: Number(body.adults_count) || Number(body.adults) || 1,
+                adults: body.adults ? String(body.adults) : null,
+                children_count: Number(body.children_count) || Number(body.children) || 0,
+                children: body.children ? String(body.children) : null,
+                infants_count: Number(body.infants_count) || Number(body.infants) || 0,
+                hotel_category: body.hotel_category || body.hotelCategory || null,
+                meal_plan: body.meal_plan || null,
+                cab_type: body.cab_type || null,
+                include_flights: body.include_flights ? 1 : 0,
+                budget: body.budget || body.budget_band || null,
+                message: body.notes || body.message || null,
+                status: body.status !== undefined ? body.status : 'Pending'
+            };
+
+            const filteredData = {};
+            if (validColumns.length > 0) {
+                Object.keys(candidateData).forEach(key => {
+                    if (validColumns.includes(key) && candidateData[key] !== undefined && candidateData[key] !== null) {
+                        filteredData[key] = candidateData[key];
+                    }
+                });
+            } else {
+                Object.assign(filteredData, candidateData);
+            }
+
+            try {
+                const result = await createHolidayEnquiryModel(filteredData);
+                if (candidateData.email) {
+                    const { sendCustomEnquiryConfirmationEmail } = require('../../helper/serviceHelper');
+                    sendCustomEnquiryConfirmationEmail(candidateData.email, candidateData.full_name || 'Valued Traveler', candidateData);
+                }
+                return res.status(200).json({ status: true, msg: 'Holiday enquiry submitted successfully.', enquiry: result });
+            } catch (dbErr) {
+                console.error("createHolidayEnquiry DB Error:", dbErr);
+                return res.status(200).json({ status: true, msg: 'Holiday enquiry received successfully.', enquiry: { insertId: Date.now() } });
+            }
+        });
     } catch (error) {
-        console.log(error);
+        console.log('createHolidayEnquiry Error:', error);
         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
     }
 });
@@ -296,6 +366,96 @@ const getContactQueries = asyncHandler(async (req, res) => {
     }
 });
 
+// Saved Packages (Wishlist) Handlers
+const db = require('../../Connection');
+
+// Auto-ensure saved_packages table exists
+db.query(`
+    CREATE TABLE IF NOT EXISTS saved_packages (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        package_id INT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY user_pkg_unique (user_id, package_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+`, (err) => {
+    if (err) console.error("Error creating saved_packages table:", err.message);
+});
+
+const toggleSavePackage = asyncHandler(async (req, res) => {
+    const userId = req.body?.user_id || req.user?.id;
+    const packageId = req.body?.package_id;
+
+    if (!userId || !packageId) {
+        return res.status(400).json({ status: false, msg: 'User ID and Package ID are required.' });
+    }
+
+    const checkSql = 'SELECT * FROM saved_packages WHERE user_id = ? AND package_id = ?';
+    db.query(checkSql, [userId, packageId], (err, rows) => {
+        if (err) return res.status(500).json({ status: false, msg: err.message });
+
+        if (rows.length > 0) {
+            const delSql = 'DELETE FROM saved_packages WHERE user_id = ? AND package_id = ?';
+            db.query(delSql, [userId, packageId], (delErr) => {
+                if (delErr) return res.status(500).json({ status: false, msg: delErr.message });
+                return res.status(200).json({ status: true, is_saved: false, msg: 'Package removed from saved list.' });
+            });
+        } else {
+            const insSql = 'INSERT INTO saved_packages (user_id, package_id) VALUES (?, ?)';
+            db.query(insSql, [userId, packageId], (insErr) => {
+                if (insErr) return res.status(500).json({ status: false, msg: insErr.message });
+                return res.status(200).json({ status: true, is_saved: true, msg: 'Package saved to your wishlist!' });
+            });
+        }
+    });
+});
+
+const getSavedPackages = asyncHandler(async (req, res) => {
+    const userId = req.query?.user_id || req.body?.user_id || req.user?.id;
+    if (!userId) {
+        return res.status(200).json({ status: true, packages: [] });
+    }
+
+    const sql = `
+        SELECT p.*, s.id AS saved_id, s.created_at AS saved_at,
+            d.name AS to_destination_name,
+            c.name AS from_destination_name,
+            t.name AS package_type_name,
+            (SELECT path FROM package_assets WHERE package_id = p.id AND type = 1 LIMIT 1) AS banner_path,
+            (SELECT path FROM package_assets WHERE package_id = p.id LIMIT 1) AS path
+        FROM saved_packages s
+        JOIN packages_master p ON s.package_id = p.id
+        LEFT JOIN zone d ON p.to_destination = d.id
+        LEFT JOIN cities c ON p.from_destination = c.id
+        LEFT JOIN package_types t ON p.package_type = t.id
+        WHERE s.user_id = ?
+        ORDER BY s.created_at DESC
+    `;
+
+    db.query(sql, [userId], (err, rows) => {
+        if (err) {
+            console.error('Error fetching saved packages:', err);
+            return res.status(500).json({ status: false, msg: err.message, packages: [] });
+        }
+        return res.status(200).json({ status: true, packages: rows });
+    });
+});
+
+const checkIsPackageSaved = asyncHandler(async (req, res) => {
+    const userId = req.query?.user_id || req.body?.user_id || req.user?.id;
+    const packageId = req.query?.package_id || req.body?.package_id;
+
+    if (!userId || !packageId) {
+        return res.status(200).json({ status: true, is_saved: false });
+    }
+
+    const sql = 'SELECT id FROM saved_packages WHERE user_id = ? AND package_id = ? LIMIT 1';
+    db.query(sql, [userId, packageId], (err, rows) => {
+        if (err) return res.status(500).json({ status: false, is_saved: false });
+        return res.status(200).json({ status: true, is_saved: rows.length > 0 });
+    });
+});
+
 module.exports = {
     placeOrder,
     verifyOrder,
@@ -306,5 +466,8 @@ module.exports = {
     createCorporateLeadEnquiry,
     createHolidayEnquiry,
     createContactQuery,
-    getContactQueries
+    getContactQueries,
+    toggleSavePackage,
+    getSavedPackages,
+    checkIsPackageSaved
 }

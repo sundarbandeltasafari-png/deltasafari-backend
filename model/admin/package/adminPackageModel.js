@@ -274,15 +274,25 @@ function deleteAssets(condition) {
 
 function getAllBookingsModel() {
     return new Promise((resolve, reject) => {
-        connection.query(`SELECT bookings.*, bookings.id as bookings_id, packages_master.*, package_assets.path, package_assets.type as asset_type, package_types.name as package_type_name, to_destination_zone.name as to_destination_name, from_destination_zone.name as from_destination_name FROM bookings 
-            LEFT JOIN packages_master ON packages_master.id = bookings.package_id 
-            LEFT JOIN package_assets ON packages_master.id = package_assets.package_id 
-            LEFT JOIN package_types ON packages_master.package_type  = package_types.id 
-            LEFT JOIN zone AS to_destination_zone  ON packages_master.to_destination = to_destination_zone.id 
-            LEFT JOIN zone AS from_destination_zone  ON packages_master.from_destination = from_destination_zone.id 
-            GROUP BY package_assets.package_id ORDER BY packages_master.id DESC`, (err, rows) => {
+        const sql = `SELECT bookings.*, bookings.id as bookings_id, 
+            packages_master.title, packages_master.slug, packages_master.duration_days, packages_master.duration_nights, packages_master.package_type,
+            package_assets.path, package_assets.type as asset_type, 
+            package_types.name as package_type_name, 
+            to_destination_zone.name as to_destination_name, 
+            from_destination_zone.name as from_destination_name,
+            packages_master.inclusions, packages_master.exclusions 
+        FROM bookings 
+        LEFT JOIN packages_master ON packages_master.id = bookings.package_id 
+        LEFT JOIN package_assets ON packages_master.id = package_assets.package_id AND (package_assets.type = 1 OR package_assets.type IS NULL)
+        LEFT JOIN package_types ON packages_master.package_type = package_types.id 
+        LEFT JOIN zone AS to_destination_zone ON packages_master.to_destination = to_destination_zone.id 
+        LEFT JOIN zone AS from_destination_zone ON packages_master.from_destination = from_destination_zone.id 
+        GROUP BY bookings.id 
+        ORDER BY bookings.id DESC`;
+
+        connection.query(sql, (err, rows) => {
             if (err) {
-                reject(new Error("Something went worng in database!" + err?.message));
+                reject(new Error("Something went wrong in database!" + err?.message));
             }
             if (rows) {
                 resolve(JSON.parse(JSON.stringify(rows)));
@@ -290,7 +300,7 @@ function getAllBookingsModel() {
                 resolve([]);
             }
         });
-    })
+    });
 }
 
 function getRawPackageByIdModel(id) {

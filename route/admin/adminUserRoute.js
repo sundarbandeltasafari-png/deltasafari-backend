@@ -3,7 +3,7 @@ const router = express.Router();
 
 
 const { adminAuthMiddleWare } = require('../../middleware/middleware');
-const { getAllUser, deleteUser, setUser, getAllAdminUser, insertAdminUser, userStatus, getAllCustomerUser, getParticularUser, getSearchUsers } = require('../../controller/admin/users/adminUserController');
+const { getAllUser, deleteUser, setUser, getAllAdminUser, insertAdminUser, userStatus, getAllCustomerUser, getParticularUser, getSearchUsers, getReferralOverview } = require('../../controller/admin/users/adminUserController');
 const { getPermisionMainRoute, createPermision, getPermisions, getParticularPermisions, editPermision } = require('../../controller/admin/users/adminPermisionController');
 
 
@@ -11,6 +11,9 @@ const { getPermisionMainRoute, createPermision, getPermisions, getParticularPerm
 router.route('/getAllUser').post(adminAuthMiddleWare, getAllUser);
 router.route('/setUser').post(adminAuthMiddleWare, setUser);
 router.route('/deleteUser').post(adminAuthMiddleWare, deleteUser);
+
+// Referral Overview
+router.route('/getReferralOverview').get(adminAuthMiddleWare, getReferralOverview).post(adminAuthMiddleWare, getReferralOverview);
 
 
 // Admin User

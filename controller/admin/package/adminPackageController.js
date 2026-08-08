@@ -54,6 +54,9 @@ const createPackage = asyncHandler(async (req, res, next) => {
             discount: body?.discount,
             discount_type: body?.discount_type,
             actual_price: body?.actual_price,
+            agent_discount: body?.agent_discount || 0,
+            agent_actual_price: body?.agent_actual_price || body?.actual_price,
+            user_commission: body?.user_commission !== undefined ? Number(body.user_commission) : 500.00,
             package_type: body?.category,
             inclusions: JSON.stringify(body?.inclusions),
             exclusions: JSON.stringify(body?.exclusions)
@@ -174,6 +177,9 @@ const editPackage = asyncHandler(async (req, res, next) => {
             discount: body?.discount,
             discount_type: body?.discount_type,
             actual_price: body?.actual_price,
+            agent_discount: body?.agent_discount || 0,
+            agent_actual_price: body?.agent_actual_price || body?.actual_price,
+            user_commission: body?.user_commission !== undefined ? Number(body.user_commission) : 500.00,
             package_type: body?.category,
             inclusions: JSON.stringify(body?.inclusions),
             exclusions: JSON.stringify(body?.exclusions)

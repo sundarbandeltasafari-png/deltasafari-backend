@@ -17,12 +17,12 @@ function getAllZoneModel() {
     })
 }
 
+const { buildCondition } = require('../../../helper/modelHelper');
+
 function getAllZoneConditionModel(condition) {
-     const customcondition = condition ? "WHERE " +Object.entries(condition)
-        .map(([key, value]) => value == '' ? `${key} IS NULL` :`${key} = ${value}`) // custom "=>" separator
-        .join(" AND ") : '';
+    const customcondition = condition ? buildCondition(condition) : '';
     return new Promise((resolve, reject) => {
-        connection.query(`SELECT * FROM zone  ${customcondition} ORDER BY sort_order DESC`, (err, rows) => {
+        connection.query(`SELECT * FROM zone ${customcondition} ORDER BY sort_order DESC`, (err, rows) => {
             if (err) {
                 reject(new Error("Something went worng in database!" + err?.message));
             }
@@ -36,11 +36,9 @@ function getAllZoneConditionModel(condition) {
 }
 
 function getParticularZoneModel(condition) {
-    const customcondition = condition ? "WHERE " +Object.entries(condition)
-        .map(([key, value]) => `${key} = ${value}`) // custom "=>" separator
-        .join(" AND ") : '';
+    const customcondition = condition ? buildCondition(condition) : '';
     return new Promise((resolve, reject) => {
-        connection.query(`SELECT * FROM zone ${customcondition} ORDER BY id DESC`, [condition], (err, rows) => {
+        connection.query(`SELECT * FROM zone ${customcondition} ORDER BY id DESC`, (err, rows) => {
             if (err) {
                 reject(new Error("Something went worng in database!" + err?.message));
             }

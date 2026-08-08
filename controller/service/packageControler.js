@@ -27,12 +27,8 @@ const getHomePackages = asyncHandler(async (req, res) => {
 
 const getDestinations = asyncHandler(async (req, res) => {
     try {
-        if (!req?.body?.condition) {
-            return res.status(401).json({ status: false, msg: 'Please add condition' })
-        }
-        const destinations = await getDestinationsModel(req?.body?.condition);
-        console.log(destinations);
-        
+        const condition = req?.body?.condition || (req?.query && Object.keys(req.query).length > 0 ? req.query : undefined) || (req?.body && Object.keys(req.body).length > 0 ? req.body : undefined);
+        const destinations = await getDestinationsModel(condition);
         return res.status(200).json({ status: true, msg: 'All destinations...', destinations: destinations })
     } catch (error) {
         console.log(error);
@@ -102,15 +98,39 @@ const getParticularPackage = asyncHandler(async (req, res, next) => {
 const createBookings = asyncHandler(async (req, res) => {
     try {
         if (!req?.body) {
-            return res.status(401).json({ status: false, msg: 'Please add vadid  details for booking' })
+            return res.status(401).json({ status: false, msg: 'Please add valid details for booking' });
         }
         const booking = await createBookingsModel(req?.body);
-        return res.status(200).json({ status: true, msg: 'Booking request registered successfully!', booking: booking })
+        if (booking && booking.insertId) {
+            const customerUserId = req.body?.user_id || req.user?.id || req.body?.userId;
+            const packageId = req.body?.package_id || req.body?.packageId;
+            if (customerUserId && packageId) {
+                const { processReferralCommission } = require('../user/userController');
+                processReferralCommission(booking.insertId, customerUserId, packageId).catch((err) => {
+                    console.error("Error in processReferralCommission:", err);
+                });
+            }
+
+            // Send Mailjet Booking Confirmation Email
+            const recipientEmail = req.body?.email || (req.user ? req.user.email : null);
+            const recipientName = req.body?.full_name || req.body?.name || (req.user ? `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim() : 'Valued Traveler');
+            if (recipientEmail) {
+                const { sendBookingConfirmationEmail } = require('../../helper/serviceHelper');
+                sendBookingConfirmationEmail(recipientEmail, recipientName, {
+                    id: booking.insertId,
+                    package_name: req.body?.package_name || req.body?.title || req.body?.destination || 'Safari Package',
+                    travel_date: req.body?.travel_date || req.body?.departure_date || 'Scheduled Date',
+                    passengers: req.body?.adults_count || req.body?.adults || 1,
+                    amount: req.body?.amount || req.body?.price || req.body?.total_price
+                });
+            }
+        }
+        return res.status(200).json({ status: true, msg: 'Booking request registered successfully!', booking: booking });
     } catch (error) {
         console.log(error);
-        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
     }
-})
+});
 
 const getFilteredPackages = asyncHandler(async (req, res, next) => {
     try {

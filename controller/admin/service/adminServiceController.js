@@ -12,7 +12,11 @@ const {
     getAllContactQueriesAdminModel,
     getParticularContactQueryAdminModel,
     updateContactQueryAdminModel,
-    deleteContactQueryAdminModel
+    deleteContactQueryAdminModel,
+    getAllBookingsAdminModel,
+    getParticularBookingAdminModel,
+    updateBookingAdminModel,
+    deleteBookingAdminModel
 } = require('../../../model/admin/service/adminServiceModel');
 
 // Contact list
@@ -235,6 +239,132 @@ const deleteContactQueryAdmin = asyncHandler(async (req, res) => {
     }
 });
 
+// --- Bookings (Admin APIs) ---
+
+// 1. Get all bookings for admin
+const getAllBookings = asyncHandler(async (req, res) => {
+    try {
+        const bookings = await getAllBookingsAdminModel();
+        return res.status(200).json({ status: true, msg: 'All bookings fetched successfully.', bookings: bookings });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
+
+// 2. Get particular booking details
+const getParticularBooking = asyncHandler(async (req, res) => {
+    try {
+        const id = req?.query?.id || req?.body?.id;
+        if (!id) {
+            return res.status(400).json({ status: false, msg: 'Please enter a valid booking ID.' });
+        }
+        const booking = await getParticularBookingAdminModel(id);
+        if (!booking || booking.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Booking not found.' });
+        }
+        return res.status(200).json({ status: true, msg: 'Booking details fetched successfully.', booking: booking[0] });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
+
+// 3. Update booking status/details & Mark as Booked with Agent Commission Crediting
+const updateBooking = asyncHandler(async (req, res) => {
+    try {
+        const id = req?.body?.id || req?.query?.id;
+        if (!id) {
+            return res.status(400).json({ status: false, msg: 'Please enter a valid booking ID.' });
+        }
+        const existingBooking = await getParticularBookingAdminModel(id);
+        if (!existingBooking || existingBooking.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Booking not found.' });
+        }
+
+        const b = existingBooking[0];
+        const updateData = { ...req.body };
+        delete updateData.id;
+        delete updateData.action;
+
+        // If marking as booked (Confirmed & Settled)
+        if (Number(req.body?.booking_status) === 2 || req.body?.action === 'mark_booked') {
+            updateData.booking_status = 2;
+            updateData.payment_status = 1;
+
+            // Credit commission to agent wallet if not already credited
+            const agentUserId = b.user_id;
+            const commAmount = Number(b.commission_amount) || 0;
+
+            if (agentUserId && commAmount > 0 && Number(b.commission_status) !== 1) {
+                updateData.commission_status = 1;
+                
+                // Credit agent wallet balance in user_master
+                const connection = require('../../../Connection');
+                await new Promise((resolve) => {
+                    connection.query('UPDATE user_master SET wallet_balance = COALESCE(wallet_balance, 0) + ? WHERE id = ?', [commAmount, agentUserId], (err, result) => {
+                        if (err) console.error('Error crediting agent wallet:', err);
+                        resolve(result);
+                    });
+                });
+
+                // Insert wallet transaction record
+                await new Promise((resolve) => {
+                    const transData = {
+                        user_id: agentUserId,
+                        booking_id: id,
+                        amount: commAmount,
+                        type: 'CREDIT',
+                        source: 'COMMISSION',
+                        description: `Agent Commission credited for confirmed booking #${id} (${b.title || 'Package Tour'})`,
+                        status: 'COMPLETED'
+                    };
+                    connection.query('INSERT INTO wallet_transactions SET ?', transData, (err, result) => {
+                        if (err) console.error('Error inserting wallet transaction:', err);
+                        resolve(result);
+                    });
+                });
+            }
+        }
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ status: false, msg: 'Please enter details to update.' });
+        }
+
+        const result = await updateBookingAdminModel(updateData, id);
+        return res.status(200).json({ 
+            status: true, 
+            msg: Number(updateData.booking_status) === 2 
+                ? 'Booking has been successfully confirmed & marked as booked! Agent commission credited to wallet.' 
+                : 'Booking updated successfully.', 
+            result: result 
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
+
+// 4. Delete a booking
+const deleteBooking = asyncHandler(async (req, res) => {
+    try {
+        const id = req?.body?.id || req?.query?.id;
+        if (!id) {
+            return res.status(400).json({ status: false, msg: 'Please enter a valid booking ID.' });
+        }
+        const existingBooking = await getParticularBookingAdminModel(id);
+        if (!existingBooking || existingBooking.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Booking not found.' });
+        }
+
+        const result = await deleteBookingAdminModel(id);
+        return res.status(200).json({ status: true, msg: 'Booking deleted successfully.', result: result });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
+
 module.exports = {
     getAllContactList,
     getAllCorporateLeadEnquiries,
@@ -247,5 +377,9 @@ module.exports = {
     getAllContactQueriesAdmin,
     getParticularContactQueryAdmin,
     updateContactQueryAdmin,
-    deleteContactQueryAdmin
+    deleteContactQueryAdmin,
+    getAllBookings,
+    getParticularBooking,
+    updateBooking,
+    deleteBooking
 }

@@ -776,6 +776,107 @@ function deleteContactQueryAdminModel(id) {
     });
 }
 
+// Bookings Admin Models
+function getAllBookingsAdminModel() {
+    return new Promise((resolve, reject) => {
+        const sql = `SELECT bookings.*, bookings.id as bookings_id, 
+            packages_master.title, packages_master.slug, packages_master.duration_days, packages_master.duration_nights, packages_master.package_type,
+            packages_master.agent_discount, packages_master.agent_actual_price,
+            package_assets.path, package_assets.type as asset_type, 
+            package_types.name as package_type_name, 
+            to_destination_zone.name as to_destination_name, 
+            from_destination_zone.name as from_destination_name,
+            packages_master.inclusions, packages_master.exclusions,
+            agent_user.first_name as agent_first_name, agent_user.last_name as agent_last_name, 
+            agent_user.phone as agent_phone, agent_user.email as agent_email, agent_user.user_type as agent_user_type 
+        FROM bookings 
+        LEFT JOIN packages_master ON packages_master.id = bookings.package_id 
+        LEFT JOIN user_master as agent_user ON agent_user.id = bookings.user_id 
+        LEFT JOIN package_assets ON packages_master.id = package_assets.package_id AND (package_assets.type = 1 OR package_assets.type IS NULL)
+        LEFT JOIN package_types ON packages_master.package_type = package_types.id 
+        LEFT JOIN zone AS to_destination_zone ON packages_master.to_destination = to_destination_zone.id 
+        LEFT JOIN zone AS from_destination_zone ON packages_master.from_destination = from_destination_zone.id 
+        GROUP BY bookings.id 
+        ORDER BY bookings.id DESC`;
+
+        connection.query(sql, (err, rows) => {
+            if (err) {
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    });
+}
+
+function getParticularBookingAdminModel(id) {
+    return new Promise((resolve, reject) => {
+        const sql = `SELECT bookings.*, bookings.id as bookings_id, 
+            packages_master.title, packages_master.slug, packages_master.duration_days, packages_master.duration_nights, packages_master.package_type,
+            packages_master.agent_discount, packages_master.agent_actual_price,
+            package_assets.path, package_assets.type as asset_type, 
+            package_types.name as package_type_name, 
+            to_destination_zone.name as to_destination_name, 
+            from_destination_zone.name as from_destination_name,
+            packages_master.inclusions, packages_master.exclusions,
+            agent_user.first_name as agent_first_name, agent_user.last_name as agent_last_name, 
+            agent_user.phone as agent_phone, agent_user.email as agent_email, agent_user.user_type as agent_user_type 
+        FROM bookings 
+        LEFT JOIN packages_master ON packages_master.id = bookings.package_id 
+        LEFT JOIN user_master as agent_user ON agent_user.id = bookings.user_id 
+        LEFT JOIN package_assets ON packages_master.id = package_assets.package_id AND (package_assets.type = 1 OR package_assets.type IS NULL)
+        LEFT JOIN package_types ON packages_master.package_type = package_types.id 
+        LEFT JOIN zone AS to_destination_zone ON packages_master.to_destination = to_destination_zone.id 
+        LEFT JOIN zone AS from_destination_zone ON packages_master.from_destination = from_destination_zone.id 
+        WHERE bookings.id = ? 
+        GROUP BY bookings.id`;
+
+        connection.query(sql, [id], (err, rows) => {
+            if (err) {
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    });
+}
+
+function updateBookingAdminModel(details, id) {
+    return new Promise((resolve, reject) => {
+        connection.query('UPDATE bookings SET ? WHERE id = ?', [details, id], (err, rows) => {
+            if (err) {
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    });
+}
+
+function deleteBookingAdminModel(id) {
+    return new Promise((resolve, reject) => {
+        connection.query('DELETE FROM bookings WHERE id = ?', [id], (err, rows) => {
+            if (err) {
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    });
+}
+
 module.exports = {
     getStudyProfileModel,
     getAllLanguagesModel,
@@ -812,5 +913,9 @@ module.exports = {
     getAllContactQueriesAdminModel,
     getParticularContactQueryAdminModel,
     updateContactQueryAdminModel,
-    deleteContactQueryAdminModel
+    deleteContactQueryAdminModel,
+    getAllBookingsAdminModel,
+    getParticularBookingAdminModel,
+    updateBookingAdminModel,
+    deleteBookingAdminModel
 }

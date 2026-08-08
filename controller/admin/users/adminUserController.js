@@ -197,4 +197,51 @@ const getSearchUsers = asyncHandler(async (req, res, next) => {
 
 
 
-module.exports = { getAllUser, setUser, deleteUser, getAllAdminUser, insertAdminUser, userStatus, getAllCustomerUser, getParticularUser, getSearchUsers }
+const getReferralOverview = asyncHandler(async (req, res, next) => {
+    try {
+        const referrers = await new Promise((resolve) => {
+            const sql = `
+                SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.referral_code, u.wallet_balance, u.user_type, u.created_at,
+                    COUNT(DISTINCT ru.id) AS total_friends_referred,
+                    COUNT(DISTINCT rt.id) AS total_referral_bookings,
+                    COALESCE(SUM(rt.commission_amount), 0) AS total_commission_paid
+                FROM user_master u
+                JOIN user_master ru ON ru.referred_by_id = u.id
+                LEFT JOIN referral_transactions rt ON rt.referrer_id = u.id
+                GROUP BY u.id
+                ORDER BY total_commission_paid DESC, total_friends_referred DESC
+            `;
+            connection.query(sql, (err, rows) => {
+                resolve(rows || []);
+            });
+        });
+
+        const transactions = await new Promise((resolve) => {
+            const sql = `
+                SELECT rt.*, 
+                    ref.first_name AS referrer_first_name, ref.last_name AS referrer_last_name, ref.email AS referrer_email, ref.referral_code,
+                    friend.first_name AS friend_first_name, friend.last_name AS friend_last_name, friend.email AS friend_email,
+                    p.title AS package_title
+                FROM referral_transactions rt
+                LEFT JOIN user_master ref ON ref.id = rt.referrer_id
+                LEFT JOIN user_master friend ON friend.id = rt.referred_user_id
+                LEFT JOIN packages_master p ON p.id = rt.package_id
+                ORDER BY rt.id DESC
+            `;
+            connection.query(sql, (err, rows) => {
+                resolve(rows || []);
+            });
+        });
+
+        return res.status(200).json({
+            status: true,
+            msg: 'Referral Overview loaded successfully.',
+            referrers,
+            transactions
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+module.exports = { getAllUser, setUser, deleteUser, getAllAdminUser, insertAdminUser, userStatus, getAllCustomerUser, getParticularUser, getSearchUsers, getReferralOverview }

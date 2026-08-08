@@ -58,6 +58,15 @@ const createCity = asyncHandler(async (req, res, next) => {
             show_in_cab: req?.body?.show_in_cab,
             city_image: null,
             slug: slugify(req?.body?.name, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }),
+            tourist_guide: req?.body?.tourist_guide ? (typeof req.body.tourist_guide === 'object' ? JSON.stringify(req.body.tourist_guide) : req.body.tourist_guide) : null,
+            meta_title: req?.body?.meta_title || null,
+            meta_description: req?.body?.meta_description || null,
+            tags: req?.body?.tags ? (Array.isArray(req.body.tags) ? req.body.tags.join(',') : req.body.tags) : null,
+            canonical_url: req?.body?.canonical_url || null,
+            og_title: req?.body?.og_title || null,
+            og_description: req?.body?.og_description || null,
+            robots_meta: req?.body?.robots_meta || 'index, follow',
+            og_image: req?.body?.og_image || null
         }
 
         if (req.files['city_image'] && req.files['city_image'].length > 0) {
@@ -96,6 +105,15 @@ const updateCity = asyncHandler(async (req, res, next) => {
             show_in_hotel: req?.body?.show_in_hotel,
             show_in_cab: req?.body?.show_in_cab,
             slug: slugify(req?.body?.name, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }),
+            tourist_guide: req?.body?.tourist_guide !== undefined ? (typeof req.body.tourist_guide === 'object' ? JSON.stringify(req.body.tourist_guide) : req.body.tourist_guide) : null,
+            meta_title: req?.body?.meta_title || null,
+            meta_description: req?.body?.meta_description || null,
+            tags: req?.body?.tags ? (Array.isArray(req.body.tags) ? req.body.tags.join(',') : req.body.tags) : null,
+            canonical_url: req?.body?.canonical_url || null,
+            og_title: req?.body?.og_title || null,
+            og_description: req?.body?.og_description || null,
+            robots_meta: req?.body?.robots_meta || 'index, follow',
+            og_image: req?.body?.og_image || null
         }
         if (req.files['city_image'] && req.files['city_image'].length > 0) {
             cityData.city_image = req.files['city_image'][0].path;

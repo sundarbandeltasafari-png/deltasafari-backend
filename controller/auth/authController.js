@@ -10,12 +10,32 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID ? process.env
 
 const register = asyncHandler(async (req, res) => {
     try {
-        const body = req?.body
+        const body = req?.body;
         const user = await getParticularUserDetails({ email: body?.email }, { phone: body?.email });
         const email = validateEmail(body?.email) ? body?.email : "";
         const phone = isValidPhoneNumber(body?.email) ? body?.email : "";
         if (user.length == 0) {
             const otp = Math.floor(100000 + Math.random() * 900000);
+
+            // Resolve referrer if referral_code or ref is provided
+            let referredById = null;
+            const refCode = (body?.referral_code || body?.ref || body?.referralCode || '').toString().trim().toUpperCase();
+            if (refCode) {
+                const referrerRows = await new Promise((resolve) => {
+                    connection.query('SELECT id FROM user_master WHERE UPPER(referral_code) = ? LIMIT 1', [refCode], (err, rows) => {
+                        resolve(rows || []);
+                    });
+                });
+                if (referrerRows.length > 0) {
+                    referredById = referrerRows[0].id;
+                }
+            }
+
+            const myReferralCode = 'DS-' + generateReferralCode(6).toUpperCase();
+            const userTypeNum = Number(body?.user_type) || 1;
+            const isAgentReg = userTypeNum === 3;
+            const initialStatus = isAgentReg ? 0 : 1; // Agent accounts require Admin activation
+
             const userData = {
                 first_name: body?.first_name,
                 last_name: body?.last_name,
@@ -23,18 +43,30 @@ const register = asyncHandler(async (req, res) => {
                 phone: phone,
                 password: md5(body?.password),
                 otp: otp,
-                status: 1
+                user_type: userTypeNum,
+                referral_code: myReferralCode,
+                referred_by_id: referredById,
+                status: initialStatus
             };
             await createUser(userData);
-            sendOtp(email, `${user[0]?.first_name} ${user[0]?.last_name}`, otp, 'register');
-            return res.status(201).json({ status: true,  msg: 'User has been registered successfully, Please verify OTP!' })
+            sendOtp(email, `${body?.first_name} ${body?.last_name}`, otp, 'register');
+
+            if (isAgentReg) {
+                return res.status(201).json({
+                    status: true,
+                    msg: 'Agent Partner account registered successfully! Your account is currently pending Admin verification and activation. You will be able to log in once approved by Admin.'
+                });
+            }
+
+            return res.status(201).json({ status: true, msg: 'User has been registered successfully, Please verify OTP!' });
         } else {
-            return res.status(400).json({ status: false, msg: 'User already registered.' })
+            return res.status(400).json({ status: false, msg: 'User already registered.' });
         }
     } catch (error) {
-        return res.status(500).json({ status: false, otp: "", msg: 'Something went wrong, please try again later' })
+        console.error("Register Error:", error);
+        return res.status(500).json({ status: false, otp: "", msg: 'Something went wrong, please try again later' });
     }
-})
+});
 
 const registerOtpValidate = asyncHandler(async (req, res) => {
     const body = req?.body
@@ -63,14 +95,23 @@ const login = asyncHandler(async (req, res) => {
         if(userdata.length == 0){
             return res.status(400).json({ status: false, msg: 'User credentials is not valid.' });
         }
-        user = userdata[0]
+        user = userdata[0];
+        
+        // Agent Account Verification Check (user_type === 3)
+        if (Number(user.user_type) === 3 && Number(user.status) !== 1) {
+            return res.status(403).json({
+                status: false,
+                msg: 'Your Agent Partner account is currently pending Admin verification and activation. Please wait for Admin approval before logging in.'
+            });
+        }
+
         if (user.status == 1) {
-            const userDetails = { id: user?.id, first_name: user?.first_name, last_name: user?.last_name, email: user?.email, phone: user?.phone }
+            const userDetails = { id: user?.id, first_name: user?.first_name, last_name: user?.last_name, email: user?.email, phone: user?.phone, user_type: user?.user_type }
             const loginToken = getToken(userDetails);
             return res.status(200).json({ status: true, otpVerify: false, msg: 'User has been logged in successfully!', token: loginToken?.token, userDetails: userDetails });
         } else if(user.status == 0) {
             const otp = Math.floor(100000 + Math.random() * 900000);
-            sendOtp(email, `${user?.first_name} ${user?.last_name}`, otp, 'register');
+            sendOtp(body?.email, `${user?.first_name} ${user?.last_name}`, otp, 'register');
             return res.status(200).json({ status: true, otpVerify: true, msg: 'Please validate your OTP to login.' });
         }
     } catch (error) {
@@ -240,6 +281,22 @@ const googleLogin = asyncHandler(async (req, res) => {
                 user.user_type = type;
             }
         } else {
+            // Resolve referrer if referral_code or ref is provided
+            let referredById = null;
+            const refCode = (body?.referral_code || body?.ref || body?.referralCode || '').toString().trim().toUpperCase();
+            if (refCode) {
+                const referrerRows = await new Promise((resolve) => {
+                    connection.query('SELECT id FROM user_master WHERE UPPER(referral_code) = ? LIMIT 1', [refCode], (err, rows) => {
+                        resolve(rows || []);
+                    });
+                });
+                if (referrerRows.length > 0) {
+                    referredById = referrerRows[0].id;
+                }
+            }
+
+            const myReferralCode = 'DS-' + generateReferralCode(6).toUpperCase();
+
             const userData = {
                 first_name: first_name || body?.name?.split(' ')[0] || email.split('@')[0],
                 last_name: last_name || body?.name?.split(' ').slice(1).join(' ') || '',
@@ -247,6 +304,8 @@ const googleLogin = asyncHandler(async (req, res) => {
                 phone: body?.phone || '',
                 user_type: type,
                 google_id: google_id || '',
+                referral_code: myReferralCode,
+                referred_by_id: referredById,
                 status: 1
             };
             await createUser(userData);

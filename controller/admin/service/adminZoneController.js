@@ -66,11 +66,20 @@ const createZone = asyncHandler(async (req, res) => {
             description: req?.body?.description,
             sort_order: req?.body?.sort_order,
             parent_id: !req?.body?.parent_id ? null : req?.body?.parent_id == 'null' ? null : req?.body?.parent_id,
-            top_trending: req?.body?.top_trending == 'true' ? 1 : 0,
-            top_destination: req?.body?.top_destination == 'true' ? 1 : 0,
+            top_trending: req?.body?.top_trending == 'true' || req?.body?.top_trending === true ? 1 : 0,
+            top_destination: req?.body?.top_destination == 'true' || req?.body?.top_destination === true ? 1 : 0,
             showing_text: req?.body?.showing_text,
+            meta_title: req?.body?.meta_title || req?.body?.name,
+            meta_description: req?.body?.meta_description || req?.body?.description,
+            meta_keywords: req?.body?.meta_keywords || (Array.isArray(req?.body?.tags) ? req.body.tags.join(', ') : req?.body?.tags) || null,
+            tags: req?.body?.tags ? (Array.isArray(req?.body?.tags) ? req.body.tags.join(', ') : req?.body?.tags) : null,
+            canonical_url: req?.body?.canonical_url || null,
+            og_title: req?.body?.og_title || req?.body?.meta_title || req?.body?.name,
+            og_description: req?.body?.og_description || req?.body?.meta_description || req?.body?.description,
+            robots_meta: req?.body?.robots_meta || 'index, follow',
             slug: slugify(req?.body?.name, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }),
-            image: null
+            image: null,
+            tourist_guide: req?.body?.tourist_guide ? (typeof req.body.tourist_guide === 'object' ? JSON.stringify(req.body.tourist_guide) : req.body.tourist_guide) : null
         }
         if (req.file) {
             zoneData.image = req.file.path;
@@ -95,10 +104,19 @@ const setZone = asyncHandler(async (req, res) => {
             name: req?.body?.name,
             description: req?.body?.description,
             sort_order: req?.body?.sort_order,
-            top_trending: req?.body?.top_trending == 'true' ? 1 : 0,
-            top_destination: req?.body?.top_destination == 'true' ? 1 : 0,
+            top_trending: req?.body?.top_trending == 'true' || req?.body?.top_trending === true ? 1 : 0,
+            top_destination: req?.body?.top_destination == 'true' || req?.body?.top_destination === true ? 1 : 0,
             showing_text: req?.body?.showing_text,
-            slug: slugify(req?.body?.name, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true })
+            meta_title: req?.body?.meta_title || req?.body?.name,
+            meta_description: req?.body?.meta_description || req?.body?.description,
+            meta_keywords: req?.body?.meta_keywords || (Array.isArray(req?.body?.tags) ? req.body.tags.join(', ') : req?.body?.tags) || null,
+            tags: req?.body?.tags ? (Array.isArray(req?.body?.tags) ? req.body.tags.join(', ') : req?.body?.tags) : null,
+            canonical_url: req?.body?.canonical_url || null,
+            og_title: req?.body?.og_title || req?.body?.meta_title || req?.body?.name,
+            og_description: req?.body?.og_description || req?.body?.meta_description || req?.body?.description,
+            robots_meta: req?.body?.robots_meta || 'index, follow',
+            slug: slugify(req?.body?.name, { replacement: '-', remove: undefined, lower: true, strict: false, locale: 'vi', trim: true }),
+            tourist_guide: req?.body?.tourist_guide !== undefined ? (typeof req.body.tourist_guide === 'object' ? JSON.stringify(req.body.tourist_guide) : req.body.tourist_guide) : null
         }
         if (req.file) {
             zoneData.image = req.file.path;
