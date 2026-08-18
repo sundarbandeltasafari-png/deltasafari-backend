@@ -5,8 +5,13 @@ const {
     buildForgotPasswordOtpHtml,
     buildLoginOtpHtml,
     buildBookingConfirmationHtml,
-    buildCustomEnquiryConfirmationHtml
+    buildCustomEnquiryConfirmationHtml,
+    buildInvoiceEmailHtml,
+    buildAdminBookingInquiryHtml
 } = require('./emailTemplateHelper');
+
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || process.env.MJ_FROM_EMAIL || 'sundarban.deltasafari@gmail.com';
+const ADMIN_NAME = 'Delta Safari Operations';
 
 const sendOtp = (toEmail, toName, otp, type) => {
     const appName = process.env.APP_NAME || 'Delta Safari';
@@ -26,17 +31,75 @@ const sendOtp = (toEmail, toName, otp, type) => {
 
         mailJetConf(toEmail, recipientName, subject, html)
             .then((result) => {
-                console.log(`Mailjet OTP email sent successfully to ${toEmail}`);
+                console.log(`[Email] OTP email sent successfully to ${toEmail}`);
                 return true;
             })
             .catch((err) => {
-                console.error("Mailjet sendOtp Error:", err);
+                console.error("[Email Error] sendOtp Error:", err?.message || err);
                 return false;
             });
     } else if (isValidPhoneNumber(toEmail)) {
         const smsSubject = type === 'reset' ? `Reset Password OTP for ${appName} is ${otp}` : `Register OTP for ${appName} is ${otp}`;
         twilioConfig(toEmail, smsSubject).then(() => true).catch(() => false);
     }
+};
+
+/**
+ * Sends official booking invoice to BOTH Logged-in User and Admin upon Razorpay payment confirmation.
+ */
+const sendPaidBookingInvoiceDualEmail = (userEmail, userName, bookingData) => {
+    const bookingId = bookingData.id || bookingData.bookings_id || `BK-${Date.now().toString().slice(-6)}`;
+    const packageName = bookingData.package_title || bookingData.title || bookingData.package_name || "Delta Safari Tour Package";
+    const totalAmount = Number(bookingData.total_cost || 0);
+    const recipientName = userName || bookingData.customer_name || 'Valued Traveler';
+
+    // 1. Send Invoice to Logged-in User
+    if (validateEmail(userEmail)) {
+        const userSubject = `Invoice & Booking Confirmation #${bookingId} - ${packageName} | Delta Safari`;
+        const userHtml = buildInvoiceEmailHtml(bookingData, recipientName, false);
+
+        mailJetConf(userEmail, recipientName, userSubject, userHtml)
+            .then(() => {
+                console.log(`[Email] Invoice sent to User (${userEmail}) for Booking #${bookingId}`);
+            })
+            .catch((err) => {
+                console.error(`[Email Error] Failed to send invoice to user (${userEmail}):`, err?.message || err);
+            });
+    }
+
+    // 2. Send Invoice Copy to Admin
+    if (validateEmail(ADMIN_EMAIL)) {
+        const adminSubject = `[PAID BOOKING] #${bookingId} Invoice - ${packageName} (₹${totalAmount.toLocaleString('en-IN')})`;
+        const adminHtml = buildInvoiceEmailHtml(bookingData, recipientName, true);
+
+        mailJetConf(ADMIN_EMAIL, ADMIN_NAME, adminSubject, adminHtml)
+            .then(() => {
+                console.log(`[Email] Invoice copy sent to Admin (${ADMIN_EMAIL}) for Booking #${bookingId}`);
+            })
+            .catch((err) => {
+                console.error(`[Email Error] Failed to send invoice copy to admin (${ADMIN_EMAIL}):`, err?.message || err);
+            });
+    }
+};
+
+/**
+ * Sends booking details email to ADMIN ONLY when someone submits the booking form (inquiry request).
+ */
+const sendAdminBookingInquiryEmail = (bookingData) => {
+    if (!validateEmail(ADMIN_EMAIL)) return;
+    const bookingId = bookingData.id || bookingData.bookings_id || `INQ-${Date.now().toString().slice(-6)}`;
+    const packageName = bookingData.package_title || bookingData.title || bookingData.package_name || "Delta Safari Tour Package";
+    const clientName = bookingData.customer_name || 'Prospective Traveler';
+    const subject = `[NEW BOOKING INQUIRY] #${bookingId} - ${packageName} (${clientName})`;
+    const html = buildAdminBookingInquiryHtml(bookingData);
+
+    mailJetConf(ADMIN_EMAIL, ADMIN_NAME, subject, html)
+        .then(() => {
+            console.log(`[Email] Booking form enquiry dispatched to Admin (${ADMIN_EMAIL}) for Request #${bookingId}`);
+        })
+        .catch((err) => {
+            console.error(`[Email Error] Failed to send booking enquiry to admin:`, err?.message || err);
+        });
 };
 
 const sendBookingConfirmationEmail = (toEmail, toName, bookingData) => {
@@ -48,10 +111,10 @@ const sendBookingConfirmationEmail = (toEmail, toName, bookingData) => {
 
     mailJetConf(toEmail, recipientName, subject, html)
         .then(() => {
-            console.log(`Mailjet booking confirmation email sent to ${toEmail}`);
+            console.log(`[Email] Booking confirmation email sent to ${toEmail}`);
         })
         .catch((err) => {
-            console.error("Mailjet sendBookingConfirmationEmail Error:", err);
+            console.error("[Email Error] sendBookingConfirmationEmail Error:", err?.message || err);
         });
 };
 
@@ -63,10 +126,10 @@ const sendCustomEnquiryConfirmationEmail = (toEmail, toName, enquiryData) => {
 
     mailJetConf(toEmail, recipientName, subject, html)
         .then(() => {
-            console.log(`Mailjet custom enquiry email sent to ${toEmail}`);
+            console.log(`[Email] Custom enquiry email sent to ${toEmail}`);
         })
         .catch((err) => {
-            console.error("Mailjet sendCustomEnquiryConfirmationEmail Error:", err);
+            console.error("[Email Error] sendCustomEnquiryConfirmationEmail Error:", err?.message || err);
         });
 };
 
@@ -92,6 +155,8 @@ function generateReferralCode(length = 8) {
 
 module.exports = {
     sendOtp,
+    sendPaidBookingInvoiceDualEmail,
+    sendAdminBookingInquiryEmail,
     sendBookingConfirmationEmail,
     sendCustomEnquiryConfirmationEmail,
     validateEmail,

@@ -4,7 +4,7 @@ const { placeOrder, verifyOrder, getAllPackage, createContact, getRecentSearchHi
 const { getAllPost, getCategory, getParticularPost, getPostByCategory } = require('../controller/service/postController');
 const { getAllPages, getParticularPage, getFaqPage, getSearchBlogs, getParticularBlog, getAllBlogs, getTotalCategoryBlogs, getTrendingBlogs, getPageSeo } = require('../controller/service/pageController');
 const { getHomeDestination, getContactDetails, getHomePosts } = require('../controller/service/commonController');
-const { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages, getCities, getAllCities, getAllPackageType, searchAll, getDiscountedPackages } = require('../controller/service/packageControler');
+const { getHomePackages, getDestinations, getParticularPackage, createBookings, createPackageRazorpayOrder, verifyPackageRazorpayPayment, razorpayWebhook, getFilteredPackages, getCities, getAllCities, getAllPackageType, searchAll, getDiscountedPackages } = require('../controller/service/packageControler');
 const router = express.Router();
 
 router.route('/placeOrder').post(authMiddleWare, placeOrder);
@@ -25,9 +25,6 @@ router.route('/createCorporateLeadEnquiry').post(createCorporateLeadEnquiry);
 // Holiday Enquiry Route (User 1st Endpoint)
 router.route('/createHolidayEnquiry').post(createHolidayEnquiry);
 
-
-
-
 // Post Route  
 router.route('/getPosts').get(getAllPost);
 router.route('/getCategory').get(getCategory);
@@ -40,7 +37,6 @@ router.route('/getParticularPage').get(getParticularPage);
 router.route('/getFaqPage').get(getFaqPage);
 router.route('/getPageSeo').get(getPageSeo);
 
-
 // Blogs
 router.route('/getAllBlogs').get(getAllBlogs);
 router.route('/getParticularBlog').get(getParticularBlog);
@@ -48,18 +44,13 @@ router.route('/getSearchBlog').post(getSearchBlogs);
 router.route('/getTotalCategoryBlogs').get(getTotalCategoryBlogs);
 router.route('/getTrendingBlogs').get(getTrendingBlogs);
 
-
-
-
 // Site Settings 
 router.route('/getSiteSettings').get(getSiteSettings);
-
 
 // Common Routes
 router.route('/getHomeDestination').get(getHomeDestination);
 router.route('/getContactDetails').get(getContactDetails);
 router.route('/getHomePosts').get(getHomePosts);
-
 
 // Packages
 router.route('/getAllPackageType').get(getAllPackageType).post(getAllPackageType);
@@ -68,7 +59,6 @@ router.route('/getParticularPackage').get(getParticularPackage);
 router.route('/filterPackages').get(getFilteredPackages).post(getFilteredPackages);
 router.route('/getDiscountedPackages').get(getDiscountedPackages).post(getDiscountedPackages);
 
-
 // Destinations
 router.route('/getDestinations').get(getDestinations).post(getDestinations);
 
@@ -76,8 +66,14 @@ router.route('/getDestinations').get(getDestinations).post(getDestinations);
 router.route('/getCities').post(getCities);
 router.route('/getAllCities').post(getAllCities);
 
-// Bookings
+// Bookings & Razorpay Online Payments
 router.route('/createBookings').post(createBookings);
+router.route('/create-razorpay-order').post(createPackageRazorpayOrder);
+router.route('/createPackageRazorpayOrder').post(createPackageRazorpayOrder);
+router.route('/verify-razorpay-payment').post(verifyPackageRazorpayPayment);
+router.route('/verifyPackageRazorpayPayment').post(verifyPackageRazorpayPayment);
+router.route('/razorpay-webhook').post(razorpayWebhook);
+router.route('/webhook/razorpay').post(razorpayWebhook);
 
 // Saved Packages / Wishlist (User & Agent)
 router.route('/toggleSavePackage').post(toggleSavePackage);

@@ -1,20 +1,23 @@
+const dotenv = require('dotenv');
+dotenv.config();
 var mysql = require('mysql');
-
-// var connection = mysql.createPool({
-//     connectionLimit: 10, // Adjust based on your workload
-//     host: 'localhost',
-//     user: 'root',
-//     password: '',
-//     database: 'deltasafari'
-// });
 
 var connection = mysql.createPool({
     connectionLimit: 10,
-    host: '127.0.0.1',
-    user: 'u662254688_deltasafari',
-    password: 'Admin1q2w--!',
-    database: 'u662254688_deltasafari'
+    host: process.env.DBHOST || 'localhost',
+    user: process.env.DBUSER || 'root',
+    password: process.env.DBPASS || '',
+    database: process.env.DB || 'deltasafari'
 });
+
+// var connection = mysql.createPool({
+//     connectionLimit: 10,
+//     host: '127.0.0.1',
+//     user: 'u662254688_deltasafari',
+//     password: 'Admin1q2w--!',
+//     database: 'u662254688_deltasafari'
+// });
+
 
 // Auto Migration for Referral Program & Tables
 const runMigrations = () => {
@@ -185,15 +188,76 @@ const runMigrations = () => {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `;
-    connection.query(createCorporateLeadTable, (err) => {
-        if (err) console.error("Error creating corporate_lead_enquiries table:", err.message);
+    const createBookingsTable = `
+        CREATE TABLE IF NOT EXISTS bookings (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NULL DEFAULT NULL,
+            package_id INT NULL DEFAULT NULL,
+            customer_name VARCHAR(255) NULL,
+            customer_email VARCHAR(255) NULL,
+            customer_phone VARCHAR(50) NULL,
+            customer_comment TEXT NULL,
+            total_travelers INT DEFAULT 1,
+            travelers LONGTEXT NULL,
+            departure_date VARCHAR(100) NULL,
+            actual_price DECIMAL(10,2) DEFAULT 0.00,
+            total_cost DECIMAL(10,2) DEFAULT 0.00,
+            booking_type VARCHAR(50) DEFAULT 'DIRECT_RAZORPAY',
+            payment_method VARCHAR(50) DEFAULT 'RAZORPAY',
+            payment_status VARCHAR(50) DEFAULT 'PENDING',
+            razorpay_order_id VARCHAR(100) NULL,
+            razorpay_payment_id VARCHAR(100) NULL,
+            razorpay_signature VARCHAR(255) NULL,
+            booking_status INT DEFAULT 1,
+            invoice_number VARCHAR(100) NULL,
+            commission_amount DECIMAL(10,2) DEFAULT 0.00,
+            commission_status INT DEFAULT 0,
+            email_sent_to_user INT DEFAULT 0,
+            email_sent_to_admin INT DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX(user_id),
+            INDEX(package_id),
+            INDEX(razorpay_order_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `;
+    connection.query(createBookingsTable, (err) => {
+        if (err) console.error("Error creating bookings table:", err.message);
 
-        connection.query(`SHOW COLUMNS FROM corporate_lead_enquiries LIKE 'user_id'`, (cErr, rows) => {
-            if (!cErr && rows && rows.length === 0) {
-                connection.query(`ALTER TABLE corporate_lead_enquiries ADD COLUMN user_id INT DEFAULT NULL`, (aErr) => {
-                    if (aErr) console.error(`Error adding user_id to corporate_lead_enquiries:`, aErr.message);
-                });
-            }
+        const bookingCols = [
+            { name: 'user_id', type: 'INT NULL DEFAULT NULL' },
+            { name: 'package_id', type: 'INT NULL DEFAULT NULL' },
+            { name: 'customer_name', type: 'VARCHAR(255) NULL' },
+            { name: 'customer_email', type: 'VARCHAR(255) NULL' },
+            { name: 'customer_phone', type: 'VARCHAR(50) NULL' },
+            { name: 'customer_comment', type: 'TEXT NULL' },
+            { name: 'total_travelers', type: 'INT DEFAULT 1' },
+            { name: 'travelers', type: 'LONGTEXT NULL' },
+            { name: 'departure_date', type: 'VARCHAR(100) NULL' },
+            { name: 'actual_price', type: 'DECIMAL(10,2) DEFAULT 0.00' },
+            { name: 'total_cost', type: 'DECIMAL(10,2) DEFAULT 0.00' },
+            { name: 'booking_type', type: "VARCHAR(50) DEFAULT 'DIRECT_RAZORPAY'" },
+            { name: 'payment_method', type: "VARCHAR(50) DEFAULT 'RAZORPAY'" },
+            { name: 'payment_status', type: "VARCHAR(50) DEFAULT 'PENDING'" },
+            { name: 'razorpay_order_id', type: 'VARCHAR(100) NULL' },
+            { name: 'razorpay_payment_id', type: 'VARCHAR(100) NULL' },
+            { name: 'razorpay_signature', type: 'VARCHAR(255) NULL' },
+            { name: 'booking_status', type: 'INT DEFAULT 1' },
+            { name: 'invoice_number', type: 'VARCHAR(100) NULL' },
+            { name: 'commission_amount', type: 'DECIMAL(10,2) DEFAULT 0.00' },
+            { name: 'commission_status', type: 'INT DEFAULT 0' },
+            { name: 'email_sent_to_user', type: 'INT DEFAULT 0' },
+            { name: 'email_sent_to_admin', type: 'INT DEFAULT 0' }
+        ];
+
+        bookingCols.forEach((col) => {
+            connection.query(`SHOW COLUMNS FROM bookings LIKE '${col.name}'`, (cErr, rows) => {
+                if (!cErr && rows && rows.length === 0) {
+                    connection.query(`ALTER TABLE bookings ADD COLUMN ${col.name} ${col.type}`, (aErr) => {
+                        if (aErr) console.error(`Error adding column ${col.name} to bookings:`, aErr.message);
+                    });
+                }
+            });
         });
     });
 };

@@ -120,60 +120,130 @@ const login = asyncHandler(async (req, res) => {
 })
 
 const resetPasswordLink = asyncHandler(async (req, res) => {
-    const body = req?.body
+    const email = (req?.body?.email || '').trim();
+    if (!email) {
+        return res.status(400).json({ status: false, msg: 'Please enter your registered email address.' });
+    }
     try {
-        const user = await getParticularUserDetails({ email: body?.email }, { phone: body?.email });
-        if (user?.length > 0) {
+        const user = await getParticularUserDetails({ email: email }, { phone: email });
+        if (user && user.length > 0) {
             const otp = Math.floor(100000 + Math.random() * 900000);
-            await setUser({ otp: otp }, body?.email);
-            sendOtp(user[0]?.email, user[0]?.name, otp, 'reset');
-            return res.status(201).json({ status: true, msg: 'Password reset mail has been send successfully!' })
+            await setUser({ otp: otp }, email);
+            const recipientName = user[0]?.first_name 
+                ? `${user[0].first_name} ${user[0].last_name || ''}`.trim() 
+                : (user[0]?.name || 'Valued Traveler');
+            
+            sendOtp(user[0]?.email || email, recipientName, otp, 'reset');
+            return res.status(200).json({ status: true, msg: 'Password reset OTP has been sent to your email address successfully!' });
         } else {
-            return res.status(400).json({ status: false, msg: 'User Not Found.' })
+            return res.status(404).json({ status: false, msg: 'No account found with this email address. Please check and try again.' });
         }
     } catch (error) {
-        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
+        console.error('resetPasswordLink Error:', error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
     }
-})
+});
+
+const verifyResetOtp = asyncHandler(async (req, res) => {
+    const email = (req?.body?.email || '').trim();
+    const otp = (req?.body?.otp || '').toString().trim();
+    if (!email || !otp) {
+        return res.status(400).json({ status: false, msg: 'Email and OTP are required.' });
+    }
+    try {
+        const user = await getParticularUserDetails({ email: email, otp: otp }, { phone: email, otp: otp });
+        if (user && user.length > 0) {
+            return res.status(200).json({ status: true, msg: 'OTP verified successfully! Please enter your new password.' });
+        } else {
+            return res.status(400).json({ status: false, msg: 'Invalid or expired OTP. Please check the code and try again.' });
+        }
+    } catch (error) {
+        console.error('verifyResetOtp Error:', error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
 
 const resetPassword = asyncHandler(async (req, res) => {
-    const body = req?.body
+    const body = req?.body;
+    const email = (body?.email || '').trim();
+    const otp = (body?.otp || '').toString().trim();
+    const password = body?.password || '';
+    const confirmPassword = body?.confirmPassword || '';
+
+    if (!email || !otp) {
+        return res.status(400).json({ status: false, msg: 'Email and OTP are required.' });
+    }
+
+    if (!password || !confirmPassword) {
+        return res.status(400).json({ status: false, msg: 'Please provide both new password and confirm password.' });
+    }
+
+    if (password !== confirmPassword) {
+        return res.status(400).json({ status: false, msg: 'Password and Confirm Password do not match.' });
+    }
+
+    if (password.length < 6) {
+        return res.status(400).json({ status: false, msg: 'Password must be at least 6 characters long.' });
+    }
+
     try {
-        const user = await getParticularUserDetails({ email: body?.email, otp: body?.otp, status: 1 }, { phone: body?.email, otp: body?.otp, status: 1 });
-        if (user.length > 0) {
-            if (body?.password && (body?.password == body?.confirmPassword)) {
-                const userPass = await setUserByOtp({ password: md5(body?.password) }, body?.email, body?.otp);
-                await setUser({ otp: '' }, body?.email);
-                return res.status(201).json({ status: true, msg: 'Password has been updated successfully!' })
-            } else {
-                return res.status(400).json({ status: false, msg: 'Password and Confirm Password should be same.' })
-            }
+        const user = await getParticularUserDetails({ email: email, otp: otp }, { phone: email, otp: otp });
+        if (user && user.length > 0) {
+            await setUserByOtp({ password: md5(password) }, email, otp);
+            await setUser({ otp: '' }, email);
+            return res.status(200).json({ status: true, msg: 'Your password has been reset successfully! You can now log in.' });
         } else {
-            return res.status(400).json({ status: false, msg: 'Invalid otp!' })
+            return res.status(400).json({ status: false, msg: 'Invalid or expired OTP. Please request a new OTP.' });
         }
     } catch (error) {
-        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
+        console.error('resetPassword Error:', error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
     }
-})
+});
 
-const resendOtp = asyncHandler(async (req, res) => {
-    const body = req?.body
-    if (!body?.email) {
-        return res.status(500).json({ status: false, msg: 'User credentials is not valid.' });
+const resendResetOtp = asyncHandler(async (req, res) => {
+    const email = (req?.body?.email || '').trim();
+    if (!email) {
+        return res.status(400).json({ status: false, msg: 'Please enter your email address.' });
     }
     try {
-        var user = await getParticularUserDetails({ email: body?.email }, { phone: body?.email });
-        if (user.length == 0) {
-            return res.status(400).json({ status: false, msg: 'Invalid user.' });
+        const user = await getParticularUserDetails({ email: email }, { phone: email });
+        if (!user || user.length === 0) {
+            return res.status(404).json({ status: false, msg: 'No account found with this email address.' });
+        }
+        const otp = Math.floor(100000 + Math.random() * 900000);
+        await setUser({ otp: otp }, email);
+        const recipientName = user[0]?.first_name 
+            ? `${user[0].first_name} ${user[0].last_name || ''}`.trim() 
+            : (user[0]?.name || 'Valued Traveler');
+        
+        sendOtp(user[0]?.email || email, recipientName, otp, 'reset');
+        return res.status(200).json({ status: true, msg: 'A new password reset OTP has been sent to your email.' });
+    } catch (err) {
+        console.error('resendResetOtp Error:', err);
+        return res.status(500).json({ status: false, msg: 'Failed to resend OTP. Please try again.' });
+    }
+});
+
+const resendOtp = asyncHandler(async (req, res) => {
+    const body = req?.body;
+    const email = (body?.email || '').trim();
+    if (!email) {
+        return res.status(400).json({ status: false, msg: 'User credentials is not valid.' });
+    }
+    try {
+        const user = await getParticularUserDetails({ email: email }, { phone: email });
+        if (!user || user.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Invalid user.' });
         }
         const otp = Math.floor(100000 + Math.random() * 900000);
         await setUser({ otp: otp }, user[0]?.email ? user[0]?.email : user[0]?.phone);
-        sendOtp(user[0]?.email ? user[0]?.email : user[0]?.phone, `${user[0]?.first_name} ${user[0]?.last_name}`, otp, 'login-with-otp');
-        return res.status(200).json({ status: true, msg: 'OTP has been send, Please verify your OTP.' })
+        sendOtp(user[0]?.email ? user[0]?.email : user[0]?.phone, `${user[0]?.first_name || ''} ${user[0]?.last_name || ''}`.trim() || 'Valued Traveler', otp, 'login-with-otp');
+        return res.status(200).json({ status: true, msg: 'OTP has been sent, please verify your OTP.' });
     } catch (err) {
-        return res.status(500).json({ status: false, msg: 'User credentials is not valid.' })
+        return res.status(500).json({ status: false, msg: 'Failed to resend OTP.' });
     }
-})
+});
 
 
 // Login Code ....
@@ -337,4 +407,15 @@ const googleLogin = asyncHandler(async (req, res) => {
     }
 });
 
-module.exports = { register, registerOtpValidate, login, loginOtpValidate, resetPasswordLink, resetPassword, resendOtp, googleLogin }
+module.exports = { 
+    register, 
+    registerOtpValidate, 
+    login, 
+    loginOtpValidate, 
+    resetPasswordLink, 
+    verifyResetOtp,
+    resetPassword, 
+    resendResetOtp,
+    resendOtp, 
+    googleLogin 
+};

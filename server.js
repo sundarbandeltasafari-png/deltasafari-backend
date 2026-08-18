@@ -64,6 +64,10 @@ console.log("Does folder exist?:", fs.existsSync(path.resolve(__dirname, 'upload
 app.get('/', async (req, res) => {
     res.send("Server Started")
 })
+const { razorpayWebhook } = require('./controller/service/packageControler');
+app.post('/webhook/razorpay', razorpayWebhook);
+app.post('/razorpay-webhook', razorpayWebhook);
+
 app.use('/auth', authRoute)
 app.use('/user', userRoute)
 app.use('/service', serviceRoute)

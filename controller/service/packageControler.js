@@ -1,8 +1,32 @@
 const asyncHandler = require('express-async-handler');
+const Razorpay = require('razorpay');
+const crypto = require('crypto');
 const md5 = require('md5');
-const { getHomePackagesModel, getDestinationsModel, getAllPackageItinerariesModel, getAllPackagePoliciesModel, getParticularPackageModel, createBookingsModel, getFilteredPackagesModel, getCitiesModel, getAllCitiesModel, getAllPackageTypesModel, searchAllModel, getDiscountedPackagesModel } = require('../../model/service/packageModel');
+const { 
+    getHomePackagesModel, 
+    getDestinationsModel, 
+    getAllPackageItinerariesModel, 
+    getAllPackagePoliciesModel, 
+    getParticularPackageModel, 
+    createBookingsModel, 
+    getBookingByIdModel,
+    getBookingByRazorpayOrderIdModel,
+    updateBookingModel,
+    getFilteredPackagesModel, 
+    getCitiesModel, 
+    getAllCitiesModel, 
+    getAllPackageTypesModel, 
+    searchAllModel, 
+    getDiscountedPackagesModel 
+} = require('../../model/service/packageModel');
 const { urlDecode } = require('../../helper/urlHelper');
 const { getAllPackageAssetsModel } = require('../../model/admin/package/adminPackageModel');
+const { sendPaidBookingInvoiceDualEmail, sendAdminBookingInquiryEmail } = require('../../helper/serviceHelper');
+
+const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_RQWjJm9q5lEiA8',
+    key_secret: process.env.RAZORPAY_KEY_SECRET || 'XwAWgPdeymk9XLHqndmSD27c'
+});
 
 const getAllPackageType = asyncHandler(async (req, res, next) => {
     try {
@@ -20,7 +44,6 @@ const getHomePackages = asyncHandler(async (req, res) => {
         return res.status(200).json({ status: true, msg: 'Top trending and top destination', domestic: domestic, international: international })
     } catch (error) {
         console.log(error);
-
         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
     }
 })
@@ -42,8 +65,6 @@ const getCities = asyncHandler(async (req, res) => {
             return res.status(401).json({ status: false, msg: 'Please add condition' })
         }
         const cities = await getCitiesModel(req?.body?.condition);
-        console.log(cities);
-        
         return res.status(200).json({ status: true, msg: 'All cities...', cities: cities })
     } catch (error) {
         console.log(error);
@@ -95,39 +116,309 @@ const getParticularPackage = asyncHandler(async (req, res, next) => {
     }
 });
 
+/**
+ * 1. Create Razorpay Order for Direct Package Booking (Only when Logged In)
+ */
+const createPackageRazorpayOrder = asyncHandler(async (req, res) => {
+    try {
+        const { package_id, total_travelers, departure_date, customer_name, customer_email, customer_phone, customer_comment, travelers } = req.body;
+
+        if (!package_id) {
+            return res.status(400).json({ status: false, msg: 'Package ID is required.' });
+        }
+
+        const packageData = await getParticularPackageModel({ "packages_master.id": package_id });
+        const pkg = packageData && packageData.length > 0 ? packageData[0] : null;
+        if (!pkg) {
+            return res.status(404).json({ status: false, msg: 'Tour package not found.' });
+        }
+
+        const travelersCount = Math.max(1, parseInt(total_travelers) || 1);
+        const isAgent = Number(req.user?.user_type) === 3;
+        const unitPrice = isAgent && pkg.agent_actual_price ? Number(pkg.agent_actual_price) : Number(pkg.actual_price || pkg.price || 0);
+        const totalAmount = unitPrice * travelersCount;
+
+        if (totalAmount <= 0) {
+            return res.status(400).json({ status: false, msg: 'Invalid booking amount. Please check package pricing.' });
+        }
+
+        const userId = req.user?.id || req.body?.user_id || null;
+        const receiptId = `bk_${Date.now().toString().slice(-8)}`;
+
+        const orderOptions = {
+            amount: Math.round(totalAmount * 100), // amount in paise
+            currency: "INR",
+            receipt: receiptId,
+            notes: {
+                package_id: String(pkg.id),
+                package_title: String(pkg.title || '').substring(0, 40),
+                user_id: userId ? String(userId) : '',
+                customer_name: customer_name || '',
+                customer_email: customer_email || '',
+                customer_phone: customer_phone || '',
+                departure_date: departure_date || '',
+                total_travelers: String(travelersCount)
+            }
+        };
+
+        const razorpayOrder = await razorpay.orders.create(orderOptions);
+
+        // Pre-insert pending booking into database
+        const bookingPayload = {
+            user_id: userId,
+            package_id: pkg.id,
+            customer_name: customer_name || (req.user ? `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim() : 'Valued Traveler'),
+            customer_email: customer_email || req.user?.email || null,
+            customer_phone: customer_phone || req.user?.phone || null,
+            customer_comment: customer_comment || null,
+            total_travelers: travelersCount,
+            travelers: travelers ? (typeof travelers === 'string' ? travelers : JSON.stringify(travelers)) : null,
+            departure_date: departure_date || null,
+            actual_price: unitPrice,
+            total_cost: totalAmount,
+            booking_type: 'DIRECT_RAZORPAY',
+            payment_method: 'RAZORPAY',
+            payment_status: 'PENDING',
+            razorpay_order_id: razorpayOrder.id,
+            booking_status: 1
+        };
+
+        const result = await createBookingsModel(bookingPayload);
+        const bookingId = result?.insertId;
+
+        return res.status(200).json({
+            status: true,
+            msg: 'Razorpay order generated successfully.',
+            order: {
+                id: razorpayOrder.id,
+                amount: razorpayOrder.amount,
+                currency: razorpayOrder.currency,
+                receipt: razorpayOrder.receipt
+            },
+            key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_RQWjJm9q5lEiA8',
+            booking_id: bookingId,
+            package_title: pkg.title,
+            total_amount: totalAmount
+        });
+    } catch (error) {
+        console.error("createPackageRazorpayOrder Error:", error);
+        return res.status(500).json({ status: false, msg: error.message || 'Failed to initialize payment gateway order.' });
+    }
+});
+
+/**
+ * 2. Verify Razorpay Payment & Confirm Booking (Dispatches Invoice to BOTH User and Admin)
+ */
+const verifyPackageRazorpayPayment = asyncHandler(async (req, res) => {
+    try {
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature, booking_id } = req.body;
+
+        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+            return res.status(400).json({ status: false, msg: 'Missing required Razorpay payment verification parameters.' });
+        }
+
+        const expectedSignature = crypto
+            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'XwAWgPdeymk9XLHqndmSD27c')
+            .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+            .digest('hex');
+
+        if (expectedSignature !== razorpay_signature) {
+            return res.status(400).json({ status: false, msg: 'Invalid payment signature! Payment verification failed.' });
+        }
+
+        // Signature verified! Retrieve booking
+        let booking = null;
+        if (booking_id) {
+            booking = await getBookingByIdModel(booking_id);
+        }
+        if (!booking && razorpay_order_id) {
+            booking = await getBookingByRazorpayOrderIdModel(razorpay_order_id);
+        }
+
+        if (!booking) {
+            return res.status(404).json({ status: false, msg: 'Booking record not found for this transaction.' });
+        }
+
+        const targetBookingId = booking.bookings_id || booking.id;
+        const invoiceNumber = booking.invoice_number || `DS-INV-${new Date().getFullYear()}-${String(targetBookingId).padStart(5, '0')}`;
+
+        const updateData = {
+            payment_status: 'PAID',
+            booking_status: 2, // Confirmed & Booked
+            razorpay_payment_id: razorpay_payment_id,
+            razorpay_signature: razorpay_signature,
+            invoice_number: invoiceNumber
+        };
+
+        await updateBookingModel(updateData, targetBookingId);
+
+        // Fetch refreshed booking with all package details for invoice email
+        const updatedBooking = await getBookingByIdModel(targetBookingId);
+
+        // Send Invoice with booking details email to BOTH Logged-in User and Admin
+        const customerEmail = updatedBooking.customer_email || updatedBooking.user_account_email;
+        const customerName = updatedBooking.customer_name || (updatedBooking.first_name ? `${updatedBooking.first_name} ${updatedBooking.last_name || ''}`.trim() : 'Valued Traveler');
+
+        if (Number(booking.email_sent_to_user) !== 1) {
+            sendPaidBookingInvoiceDualEmail(customerEmail, customerName, updatedBooking);
+            await updateBookingModel({ email_sent_to_user: 1, email_sent_to_admin: 1 }, targetBookingId);
+        }
+
+        // Process referral commission if eligible
+        const customerUserId = updatedBooking.user_id;
+        const packageId = updatedBooking.package_id;
+        if (customerUserId && packageId) {
+            try {
+                const { processReferralCommission } = require('../user/userController');
+                processReferralCommission(targetBookingId, customerUserId, packageId).catch((err) => {
+                    console.error("Error in processReferralCommission:", err);
+                });
+            } catch (refErr) {
+                console.error("Referral process error:", refErr);
+            }
+        }
+
+        return res.status(200).json({
+            status: true,
+            msg: 'Payment verified and booking confirmed successfully! Official invoice has been dispatched to your email.',
+            booking_id: targetBookingId,
+            invoice_number: invoiceNumber,
+            booking: updatedBooking
+        });
+    } catch (error) {
+        console.error("verifyPackageRazorpayPayment Error:", error);
+        return res.status(500).json({ status: false, msg: error.message || 'Payment verification failed.' });
+    }
+});
+
+/**
+ * 3. Razorpay Webhook Handler for automated asynchronous payment confirmation
+ */
+const razorpayWebhook = asyncHandler(async (req, res) => {
+    try {
+        const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_KEY_SECRET || 'XwAWgPdeymk9XLHqndmSD27c';
+        const signature = req.headers['x-razorpay-signature'];
+
+        // Validate webhook signature if header is provided
+        if (signature) {
+            const bodyStr = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+            const expectedSig = crypto
+                .createHmac('sha256', webhookSecret)
+                .update(bodyStr)
+                .digest('hex');
+
+            if (signature !== expectedSig) {
+                console.warn("[Razorpay Webhook] Signature verification mismatch.");
+            }
+        }
+
+        const event = req.body;
+        console.log(`[Razorpay Webhook Received] Event: ${event?.event}`);
+
+        if (event?.event === 'payment.captured' || event?.event === 'order.paid') {
+            const paymentEntity = event.payload?.payment?.entity;
+            const orderId = paymentEntity?.order_id || event.payload?.order?.entity?.id;
+            const paymentId = paymentEntity?.id;
+
+            if (orderId) {
+                const booking = await getBookingByRazorpayOrderIdModel(orderId);
+                if (booking && booking.payment_status !== 'PAID') {
+                    const targetBookingId = booking.bookings_id || booking.id;
+                    const invoiceNumber = booking.invoice_number || `DS-INV-${new Date().getFullYear()}-${String(targetBookingId).padStart(5, '0')}`;
+
+                    await updateBookingModel({
+                        payment_status: 'PAID',
+                        booking_status: 2,
+                        razorpay_payment_id: paymentId || booking.razorpay_payment_id,
+                        invoice_number: invoiceNumber
+                    }, targetBookingId);
+
+                    const updatedBooking = await getBookingByIdModel(targetBookingId);
+
+                    if (Number(booking.email_sent_to_user) !== 1) {
+                        const customerEmail = updatedBooking.customer_email || updatedBooking.user_account_email;
+                        const customerName = updatedBooking.customer_name || 'Valued Traveler';
+                        sendPaidBookingInvoiceDualEmail(customerEmail, customerName, updatedBooking);
+                        await updateBookingModel({ email_sent_to_user: 1, email_sent_to_admin: 1 }, targetBookingId);
+                    }
+
+                    // Process referral if applicable
+                    if (updatedBooking.user_id && updatedBooking.package_id) {
+                        try {
+                            const { processReferralCommission } = require('../user/userController');
+                            processReferralCommission(targetBookingId, updatedBooking.user_id, updatedBooking.package_id).catch(console.error);
+                        } catch (e) {}
+                    }
+                }
+            }
+        }
+
+        return res.status(200).json({ status: 'ok' });
+    } catch (error) {
+        console.error("razorpayWebhook Error:", error);
+        return res.status(200).json({ status: 'error', msg: error.message });
+    }
+});
+
+/**
+ * 4. Create Booking Inquiry Form Request (For non-logged in users OR logged-in users submitting enquiry form)
+ * Dispatches Booking Details email to ADMIN ONLY.
+ */
 const createBookings = asyncHandler(async (req, res) => {
     try {
         if (!req?.body) {
-            return res.status(401).json({ status: false, msg: 'Please add valid details for booking' });
+            return res.status(400).json({ status: false, msg: 'Please add valid details for booking' });
         }
-        const booking = await createBookingsModel(req?.body);
-        if (booking && booking.insertId) {
-            const customerUserId = req.body?.user_id || req.user?.id || req.body?.userId;
-            const packageId = req.body?.package_id || req.body?.packageId;
-            if (customerUserId && packageId) {
-                const { processReferralCommission } = require('../user/userController');
-                processReferralCommission(booking.insertId, customerUserId, packageId).catch((err) => {
-                    console.error("Error in processReferralCommission:", err);
-                });
-            }
 
-            // Send Mailjet Booking Confirmation Email
-            const recipientEmail = req.body?.email || (req.user ? req.user.email : null);
-            const recipientName = req.body?.full_name || req.body?.name || (req.user ? `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim() : 'Valued Traveler');
-            if (recipientEmail) {
-                const { sendBookingConfirmationEmail } = require('../../helper/serviceHelper');
-                sendBookingConfirmationEmail(recipientEmail, recipientName, {
-                    id: booking.insertId,
-                    package_name: req.body?.package_name || req.body?.title || req.body?.destination || 'Safari Package',
-                    travel_date: req.body?.travel_date || req.body?.departure_date || 'Scheduled Date',
-                    passengers: req.body?.adults_count || req.body?.adults || 1,
-                    amount: req.body?.amount || req.body?.price || req.body?.total_price
-                });
-            }
+        const packageId = req.body?.package_id || req.body?.packageId;
+        let pkg = null;
+        if (packageId) {
+            const packageData = await getParticularPackageModel({ "packages_master.id": packageId });
+            pkg = packageData && packageData.length > 0 ? packageData[0] : null;
         }
-        return res.status(200).json({ status: true, msg: 'Booking request registered successfully!', booking: booking });
+
+        const travelersCount = Math.max(1, parseInt(req.body?.total_travelers || req.body?.adults_count || req.body?.adults || 1));
+        const unitPrice = Number(req.body?.actual_price || pkg?.actual_price || pkg?.price || 0);
+        const totalCost = Number(req.body?.total_cost || (unitPrice * travelersCount) || 0);
+
+        const bookingPayload = {
+            user_id: req.user?.id || req.body?.user_id || null,
+            package_id: packageId,
+            customer_name: req.body?.customer_name || req.body?.name || req.body?.full_name || 'Guest Traveler',
+            customer_email: req.body?.customer_email || req.body?.email || null,
+            customer_phone: req.body?.customer_phone || req.body?.phone || null,
+            customer_comment: req.body?.customer_comment || req.body?.comment || req.body?.message || null,
+            total_travelers: travelersCount,
+            travelers: req.body?.travelers ? (typeof req.body.travelers === 'string' ? req.body.travelers : JSON.stringify(req.body.travelers)) : null,
+            departure_date: req.body?.departure_date || req.body?.travel_date || null,
+            actual_price: unitPrice,
+            total_cost: totalCost,
+            booking_type: req.body?.booking_type || 'ENQUIRY_FORM',
+            payment_method: req.body?.payment_method || 'INQUIRY',
+            payment_status: 'PENDING',
+            booking_status: 1
+        };
+
+        const bookingResult = await createBookingsModel(bookingPayload);
+        const bookingId = bookingResult?.insertId;
+
+        // Fetch full booking details with package info for admin notification
+        let fullBooking = { ...bookingPayload, id: bookingId, package_title: pkg?.title };
+        if (bookingId) {
+            const fetched = await getBookingByIdModel(bookingId);
+            if (fetched) fullBooking = fetched;
+        }
+
+        // If user submitted booking form -> Booking details email should come to ADMIN ONLY
+        sendAdminBookingInquiryEmail(fullBooking);
+
+        return res.status(200).json({
+            status: true,
+            msg: 'Booking request registered successfully! Our travel team will contact you shortly.',
+            booking: fullBooking
+        });
     } catch (error) {
-        console.log(error);
+        console.error("createBookings Error:", error);
         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
     }
 });
@@ -196,4 +487,18 @@ const getDiscountedPackages = asyncHandler(async (req, res, next) => {
     }
 });
 
-module.exports = { getHomePackages, getDestinations, getParticularPackage, createBookings, getFilteredPackages, getCities, getAllCities, getAllPackageType, searchAll, getDiscountedPackages };
+module.exports = { 
+    getHomePackages, 
+    getDestinations, 
+    getParticularPackage, 
+    createBookings, 
+    createPackageRazorpayOrder,
+    verifyPackageRazorpayPayment,
+    razorpayWebhook,
+    getFilteredPackages, 
+    getCities, 
+    getAllCities, 
+    getAllPackageType, 
+    searchAll, 
+    getDiscountedPackages 
+};

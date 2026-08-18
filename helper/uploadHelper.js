@@ -3,6 +3,18 @@ const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
 
+const sanitizeFilename = (origName, defaultName = 'deltasafari-image') => {
+  if (!origName) return defaultName;
+  const base = path.parse(origName).name;
+  const slug = base
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '') // remove non-word characters except spaces and hyphens
+    .replace(/[\s_-]+/g, '-') // convert spaces and underscores to single hyphen
+    .replace(/^-+|-+$/g, ''); // trim leading and trailing hyphens
+  return slug || defaultName;
+};
+
 const createUploader = (type = 'image', subfolder = '') => {
   let allowedMimes = [];
   let maxSize = 0;
@@ -25,11 +37,12 @@ const createUploader = (type = 'image', subfolder = '') => {
       const uploadPath = path.join('uploads', subfolder);
       fs.mkdirSync(uploadPath, { recursive: true });
 
-      const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      const cleanBase = sanitizeFilename(file.originalname, subfolder || 'deltasafari-image');
+      const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e4)}`;
 
       // Handle Videos
       if (file.mimetype.startsWith('video/')) {
-        const filename = `${uniqueSuffix}${path.extname(file.originalname)}`;
+        const filename = `${cleanBase}-${uniqueSuffix}${path.extname(file.originalname)}`;
         const fullPath = path.join(uploadPath, filename);
         const outStream = fs.createWriteStream(fullPath);
 
@@ -42,7 +55,7 @@ const createUploader = (type = 'image', subfolder = '') => {
 
       // Handle and Optimize Images
       else if (file.mimetype.startsWith('image/')) {
-        const filename = `${uniqueSuffix}.jpg`; // Enforce .jpg extension
+        const filename = `${cleanBase}-${uniqueSuffix}.jpg`; // Enforce .jpg extension with clean SEO base name
         const fullPath = path.join(uploadPath, filename);
 
         // Setup Sharp transformation pipeline
@@ -90,4 +103,4 @@ const createUploader = (type = 'image', subfolder = '') => {
   });
 };
 
-module.exports = { createUploader };
+module.exports = { createUploader, sanitizeFilename };

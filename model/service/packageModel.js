@@ -172,7 +172,7 @@ function createBookingsModel(packageData) {
     return new Promise((resolve, reject) => {
         connection.query('INSERT INTO bookings SET ?', packageData, (err, rows) => {
             if (err) {
-                reject(new Error("Something went worng in database!" + err?.message));
+                reject(new Error("Something went wrong in database!" + err?.message));
             }
             if (rows) {
                 resolve(JSON.parse(JSON.stringify(rows)));
@@ -180,8 +180,80 @@ function createBookingsModel(packageData) {
                 resolve([]);
             }
         });
+    });
+}
 
-    })
+function getBookingByIdModel(id) {
+    return new Promise((resolve, reject) => {
+        const sql = `SELECT bookings.*, bookings.id as bookings_id, 
+            packages_master.title as package_title, packages_master.title, packages_master.slug, 
+            packages_master.duration_days, packages_master.duration_nights, packages_master.package_type,
+            packages_master.actual_price as package_price, packages_master.inclusions, packages_master.exclusions,
+            to_destination_zone.name as to_destination_name, from_destination_zone.name as from_destination_name,
+            user_master.first_name, user_master.last_name, user_master.email as user_account_email, user_master.phone as user_account_phone
+        FROM bookings 
+        LEFT JOIN packages_master ON packages_master.id = bookings.package_id 
+        LEFT JOIN zone AS to_destination_zone ON packages_master.to_destination = to_destination_zone.id 
+        LEFT JOIN zone AS from_destination_zone ON packages_master.from_destination = from_destination_zone.id 
+        LEFT JOIN user_master ON user_master.id = bookings.user_id 
+        WHERE bookings.id = ? 
+        LIMIT 1`;
+
+        connection.query(sql, [id], (err, rows) => {
+            if (err) {
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows && rows.length > 0) {
+                resolve(JSON.parse(JSON.stringify(rows[0])));
+            } else {
+                resolve(null);
+            }
+        });
+    });
+}
+
+function getBookingByRazorpayOrderIdModel(orderId) {
+    return new Promise((resolve, reject) => {
+        const sql = `SELECT bookings.*, bookings.id as bookings_id, 
+            packages_master.title as package_title, packages_master.title, packages_master.slug, 
+            packages_master.duration_days, packages_master.duration_nights, packages_master.package_type,
+            packages_master.actual_price as package_price, packages_master.inclusions, packages_master.exclusions,
+            to_destination_zone.name as to_destination_name, from_destination_zone.name as from_destination_name,
+            user_master.first_name, user_master.last_name, user_master.email as user_account_email, user_master.phone as user_account_phone
+        FROM bookings 
+        LEFT JOIN packages_master ON packages_master.id = bookings.package_id 
+        LEFT JOIN zone AS to_destination_zone ON packages_master.to_destination = to_destination_zone.id 
+        LEFT JOIN zone AS from_destination_zone ON packages_master.from_destination = from_destination_zone.id 
+        LEFT JOIN user_master ON user_master.id = bookings.user_id 
+        WHERE bookings.razorpay_order_id = ? 
+        LIMIT 1`;
+
+        connection.query(sql, [orderId], (err, rows) => {
+            if (err) {
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows && rows.length > 0) {
+                resolve(JSON.parse(JSON.stringify(rows[0])));
+            } else {
+                resolve(null);
+            }
+        });
+    });
+}
+
+function updateBookingModel(details, id) {
+    return new Promise((resolve, reject) => {
+        connection.query('UPDATE bookings SET ? WHERE id = ?', [details, id], (err, rows) => {
+            if (err) {
+                reject(new Error("Something went wrong in database!" + err?.message));
+            }
+            if (rows) {
+                resolve(JSON.parse(JSON.stringify(rows)));
+            } else {
+                resolve([]);
+            }
+        });
+    });
 }
 
 
@@ -374,6 +446,9 @@ module.exports = {
     getAllPackagePoliciesModel,
     getAllPackageItinerariesModel,
     createBookingsModel,
+    getBookingByIdModel,
+    getBookingByRazorpayOrderIdModel,
+    updateBookingModel,
     getFilteredPackagesModel,
     getCitiesModel,
     getAllCitiesModel,
