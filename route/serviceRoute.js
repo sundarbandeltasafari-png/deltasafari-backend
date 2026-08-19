@@ -4,7 +4,8 @@ const { placeOrder, verifyOrder, getAllPackage, createContact, getRecentSearchHi
 const { getAllPost, getCategory, getParticularPost, getPostByCategory } = require('../controller/service/postController');
 const { getAllPages, getParticularPage, getFaqPage, getSearchBlogs, getParticularBlog, getAllBlogs, getTotalCategoryBlogs, getTrendingBlogs, getPageSeo } = require('../controller/service/pageController');
 const { getHomeDestination, getContactDetails, getHomePosts } = require('../controller/service/commonController');
-const { getHomePackages, getDestinations, getParticularPackage, createBookings, createPackageRazorpayOrder, verifyPackageRazorpayPayment, razorpayWebhook, getFilteredPackages, getCities, getAllCities, getAllPackageType, searchAll, getDiscountedPackages } = require('../controller/service/packageControler');
+const { getHomePackages, getDestinations, getCorporateDestinations, getParticularPackage, createBookings, createPackageRazorpayOrder, verifyPackageRazorpayPayment, razorpayWebhook, getFilteredPackages, getCities, getAllCities, getAllPackageType, searchAll, getDiscountedPackages } = require('../controller/service/packageControler');
+const { getAllHotelsPublic, getParticularHotelPublic } = require('../controller/admin/service/adminHotelController');
 const router = express.Router();
 
 router.route('/placeOrder').post(authMiddleWare, placeOrder);
@@ -59,8 +60,13 @@ router.route('/getParticularPackage').get(getParticularPackage);
 router.route('/filterPackages').get(getFilteredPackages).post(getFilteredPackages);
 router.route('/getDiscountedPackages').get(getDiscountedPackages).post(getDiscountedPackages);
 
+// Search (Global Search Bar & Autocomplete)
+router.route('/search').get(searchAll).post(searchAll);
+router.route('/searchAll').get(searchAll).post(searchAll);
+
 // Destinations
 router.route('/getDestinations').get(getDestinations).post(getDestinations);
+router.route('/getCorporateDestinations').get(getCorporateDestinations).post(getCorporateDestinations);
 
 // Cities
 router.route('/getCities').post(getCities);
@@ -79,5 +85,9 @@ router.route('/webhook/razorpay').post(razorpayWebhook);
 router.route('/toggleSavePackage').post(toggleSavePackage);
 router.route('/getSavedPackages').get(getSavedPackages).post(getSavedPackages);
 router.route('/checkIsPackageSaved').get(checkIsPackageSaved).post(checkIsPackageSaved);
+
+// Hotels & Reference Accommodation (Public)
+router.route('/getHotels').get(getAllHotelsPublic).post(getAllHotelsPublic);
+router.route('/getParticularHotel').get(getParticularHotelPublic).post(getParticularHotelPublic);
 
 module.exports = router

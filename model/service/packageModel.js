@@ -413,7 +413,12 @@ function getDiscountedPackagesModel(limit = 6) {
                            to_destination_zone.slug as to_destination_slug, 
                            from_destination_zone.name as from_destination_name, 
                            from_destination_zone.slug as from_destination_slug,
-                           ROUND(((COALESCE(NULLIF(packages_master.mrp_price, 0), packages_master.actual_price * 1.25) - packages_master.actual_price) / COALESCE(NULLIF(packages_master.mrp_price, 0), packages_master.actual_price * 1.25)) * 100) AS discount_percent
+                           CASE 
+                               WHEN packages_master.discount IS NOT NULL AND packages_master.discount > 0 THEN packages_master.discount
+                               WHEN packages_master.base_price IS NOT NULL AND packages_master.base_price > packages_master.actual_price 
+                                   THEN ROUND(((packages_master.base_price - packages_master.actual_price) / packages_master.base_price) * 100)
+                               ELSE 20
+                           END AS discount_percent
                     FROM packages_master 
                     LEFT JOIN package_assets ON packages_master.id = package_assets.package_id 
                     LEFT JOIN package_types ON packages_master.package_type = package_types.id 

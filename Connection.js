@@ -45,6 +45,31 @@ const runMigrations = () => {
         }
     });
 
+    // Auto Migration for Corporate Destinations in zone & cities
+    connection.query(`SHOW COLUMNS FROM zone LIKE 'show_in_corporate'`, (err, rows) => {
+        if (!err && rows && rows.length === 0) {
+            connection.query(`ALTER TABLE zone ADD COLUMN show_in_corporate INT DEFAULT 0`, (e) => {
+                if (e) console.error("Error adding show_in_corporate to zone:", e.message);
+            });
+        }
+    });
+
+    connection.query(`SHOW COLUMNS FROM zone LIKE 'corporate_tag'`, (err, rows) => {
+        if (!err && rows && rows.length === 0) {
+            connection.query(`ALTER TABLE zone ADD COLUMN corporate_tag VARCHAR(255) NULL`, (e) => {
+                if (e) console.error("Error adding corporate_tag to zone:", e.message);
+            });
+        }
+    });
+
+    connection.query(`SHOW COLUMNS FROM cities LIKE 'show_in_corporate'`, (err, rows) => {
+        if (!err && rows && rows.length === 0) {
+            connection.query(`ALTER TABLE cities ADD COLUMN show_in_corporate INT DEFAULT 0`, (e) => {
+                if (e) console.error("Error adding show_in_corporate to cities:", e.message);
+            });
+        }
+    });
+
     const createReferralsTable = `
         CREATE TABLE IF NOT EXISTS referral_transactions (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -260,10 +285,126 @@ const runMigrations = () => {
             });
         });
     });
+
+    // 1. Hotels Master Table
+    const createHotelsTable = `
+        CREATE TABLE IF NOT EXISTS hotels_master (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            slug VARCHAR(255) NULL,
+            star_rating INT DEFAULT 3,
+            hotel_type VARCHAR(100) DEFAULT 'Resort',
+            city_id INT NULL,
+            city_name VARCHAR(100) NULL,
+            zone_id INT NULL,
+            zone_name VARCHAR(100) NULL,
+            address VARCHAR(255) NULL,
+            starting_price DECIMAL(10,2) DEFAULT 0.00,
+            main_image VARCHAR(255) NULL,
+            images LONGTEXT NULL,
+            amenities LONGTEXT NULL,
+            room_types LONGTEXT NULL,
+            description LONGTEXT NULL,
+            check_in_time VARCHAR(50) DEFAULT '12:00 PM',
+            check_out_time VARCHAR(50) DEFAULT '11:00 AM',
+            contact_number VARCHAR(50) NULL,
+            contact_email VARCHAR(100) NULL,
+            meta_title VARCHAR(255) NULL,
+            meta_description TEXT NULL,
+            tags VARCHAR(255) NULL,
+            status INT DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX(slug),
+            INDEX(city_id),
+            INDEX(zone_id),
+            INDEX(status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `;
+    connection.query(createHotelsTable, (err) => {
+        if (err) console.error("Error creating hotels_master table:", err.message);
+
+        // 2. Package Reference Hotels Junction Table (Many-to-Many)
+        const createPackageHotelsTable = `
+            CREATE TABLE IF NOT EXISTS package_reference_hotels (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                package_id INT NOT NULL,
+                hotel_id INT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX(package_id),
+                INDEX(hotel_id),
+                UNIQUE KEY uniq_pkg_hotel (package_id, hotel_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `;
+        connection.query(createPackageHotelsTable, (pErr) => {
+            if (pErr) console.error("Error creating package_reference_hotels table:", pErr.message);
+
+            // Optional Seed initial reference hotels if empty
+            connection.query(`SELECT COUNT(*) as count FROM hotels_master`, (sErr, sRows) => {
+                if (!sErr && sRows && sRows[0]?.count === 0) {
+                    const sampleAmenities1 = JSON.stringify([
+                        "Free High-Speed Wi-Fi",
+                        "Air Conditioned Cottages",
+                        "Multi-Cuisine Restaurant",
+                        "24/7 Power Backup",
+                        "Safari Boat Jetty Transfer",
+                        "River View Balcony",
+                        "Campfire & Folk Baul Show",
+                        "Tea/Coffee Maker",
+                        "Hot Water Geyser"
+                    ]);
+                    const sampleRoomTypes1 = JSON.stringify([
+                        { name: "Deluxe AC Mud Cottage", price: 2800, features: "King Bed, Riverfront Balcony, Attached Washroom, AC" },
+                        { name: "Executive Mangrove Suite", price: 4200, features: "Private Deck, Bathtub, Garden View, Complimentary Breakfast" }
+                    ]);
+                    const sampleAmenities2 = JSON.stringify([
+                        "Swimming Pool",
+                        "Air Conditioned Luxury Rooms",
+                        "River-Facing Dining Deck",
+                        "24/7 Room Service",
+                        "Spa & Wellness Center",
+                        "Complimentary Breakfast",
+                        "Free Wi-Fi",
+                        "Doctor on Call"
+                    ]);
+                    const sampleRoomTypes2 = JSON.stringify([
+                        { name: "Luxury Riverfront Room", price: 3500, features: "Scenic River View, King Bed, Minibar, Smart TV" },
+                        { name: "Royal Forest Villa", price: 5500, features: "Jacuzzi, Private Lawn, Butler Service, 24hr In-Room Dining" }
+                    ]);
+
+                    const seedSql = `
+                        INSERT INTO hotels_master (name, slug, star_rating, hotel_type, city_name, zone_name, address, starting_price, main_image, amenities, room_types, description, check_in_time, check_out_time, status)
+                        VALUES 
+                        ('Sundarban Tiger Camp Eco Resort', 'sundarban-tiger-camp-eco-resort', 4, 'Eco Resort', 'Dayapur', 'Sundarban', 'Dayapur Island, Opp. Sajnekhali Watchtower, Sundarban, West Bengal', 2800.00, '/assets/img/innerpages/hotel-dt-gallery-img1.jpg', ?, ?, 'Nestled right in the heart of nature across Sajnekhali Tiger Reserve, Sundarban Tiger Camp Eco Resort offers authentic tribal architecture combined with modern comforts. Enjoy riverside dining, fresh local Bengali fish delicacies, sunset watchtower views, and cultural folk performances every evening.', '12:00 PM', '11:00 AM', 1),
+                        ('Pakhiralay Riverside Retreat & Spa', 'pakhiralay-riverside-retreat-and-spa', 4, 'Resort', 'Pakhiralay', 'Sundarban', 'Pakhiralay Main Road, Near Tourist Jetty, Gosaba, Sundarban', 3200.00, '/assets/img/innerpages/hotel-dt-gallery-img2.jpg', ?, ?, 'A premium riverfront resort located just minutes from the main boat boarding point. Features manicured green gardens, an outdoor swimming pool, dedicated children play area, multi-cuisine open-air restaurant, and prompt safari assistance.', '12:00 PM', '10:30 AM', 1);
+                    `;
+                    connection.query(seedSql, [sampleAmenities1, sampleRoomTypes1, sampleAmenities2, sampleRoomTypes2], (insErr, insRes) => {
+                        if (!insErr && insRes?.insertId) {
+                            // Link first two hotels to all existing packages
+                            connection.query(`SELECT id FROM packages_master`, (pkgErr, packages) => {
+                                if (!pkgErr && packages && packages.length > 0) {
+                                    packages.forEach((pkg) => {
+                                        connection.query(`INSERT IGNORE INTO package_reference_hotels (package_id, hotel_id) VALUES (?, ?), (?, ?)`, [pkg.id, insRes.insertId, pkg.id, insRes.insertId + 1]);
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+        });
+    });
+};
+
+let migrationExecuted = false;
+const runMigrationsOnce = () => {
+    if (migrationExecuted) return;
+    migrationExecuted = true;
+    runMigrations();
 };
 
 connection.on('connection', function (conn) {
-    runMigrations();
+    runMigrationsOnce();
     conn.on('error', function (err) {
         if (err.code === 'PROTOCOL_CONNECTION_LOST' || err.code === 'ECONNRESET') {
             conn.destroy();

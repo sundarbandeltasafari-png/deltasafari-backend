@@ -3,6 +3,7 @@ const md5 = require('md5');
 const fs = require('fs');
 const path = require('path');
 const { getAllPackageTypesModel, createPackageModel, createPackageAssetsModel, createPackageItinerariesModel, createPackagePoliciesModel, getAllPackageModel, getAllPackageItinerariesModel, getAllPackageAssetsModel, getAllPackagePoliciesModel, setPackageModel, getParticularPackageModel, deletePoliciesModel, deleteItinerariesModel, deleteAssets, deletePackageModel, getAllBookingsModel, getRawPackageByIdModel, checkDuplicateSlugModel } = require('../../../model/admin/package/adminPackageModel');
+const { getPackageReferenceHotelsModel, linkPackageToHotels } = require('../../../model/admin/service/adminHotelModel');
 const slugify = require('slugify');
 const { urlDecode } = require('../../../helper/urlHelper');
 const { deleteFile } = require('../../../helper/deleteHelper');
@@ -98,6 +99,33 @@ const createPackage = asyncHandler(async (req, res, next) => {
             return await createPackageAssetsModel({ path: videoFile.path, package_id: package.insertId, type: 2 });
         }));
 
+        // Link Reference Hotels
+        let hotelIds = [];
+        if (body?.hotel_ids) {
+            if (Array.isArray(body.hotel_ids)) {
+                hotelIds = body.hotel_ids.map(Number).filter(Boolean);
+            } else if (typeof body.hotel_ids === 'string') {
+                try {
+                    hotelIds = JSON.parse(body.hotel_ids).map(Number).filter(Boolean);
+                } catch (e) {
+                    hotelIds = body.hotel_ids.split(',').map(s => Number(s.trim())).filter(Boolean);
+                }
+            }
+        } else if (body?.reference_hotels) {
+            if (Array.isArray(body.reference_hotels)) {
+                hotelIds = body.reference_hotels.map(Number).filter(Boolean);
+            } else if (typeof body.reference_hotels === 'string') {
+                try {
+                    hotelIds = JSON.parse(body.reference_hotels).map(Number).filter(Boolean);
+                } catch (e) {
+                    hotelIds = body.reference_hotels.split(',').map(s => Number(s.trim())).filter(Boolean);
+                }
+            }
+        }
+        if (hotelIds.length > 0) {
+            await linkPackageToHotels(package.insertId, hotelIds);
+        }
+
         return res.status(200).json({ status: true, msg: 'Package has been created successfully.', videos: videoAssets, image: imageAssets })
     } catch (error) {
         next(error)
@@ -127,6 +155,8 @@ const getParticularPackage = asyncHandler(async (req, res, next) => {
         package.itineraries = await getAllPackageItinerariesModel({ package_id: package?.id });
         package.assets = await getAllPackageAssetsModel({ package_id: package?.id });
         package.policies = await getAllPackagePoliciesModel({ package_id: package?.id });
+        package.reference_hotels = await getPackageReferenceHotelsModel(package?.id);
+        package.hotel_ids = (package.reference_hotels || []).map(h => h.id);
         return res.status(200).json({ status: true, msg: 'Get Particular package.', package: package })
     } catch (error) {
         next(error)
@@ -229,6 +259,22 @@ const editPackage = asyncHandler(async (req, res, next) => {
             return await createPackageAssetsModel({ path: videoFile.path, package_id: packageId, type: 2 });
         }));
 
+        // Update linked reference hotels
+        if (body?.hotel_ids !== undefined || body?.reference_hotels !== undefined) {
+            let hotelIds = [];
+            const rawHotelData = body?.hotel_ids !== undefined ? body.hotel_ids : body.reference_hotels;
+            if (Array.isArray(rawHotelData)) {
+                hotelIds = rawHotelData.map(Number).filter(Boolean);
+            } else if (typeof rawHotelData === 'string') {
+                try {
+                    hotelIds = JSON.parse(rawHotelData).map(Number).filter(Boolean);
+                } catch (e) {
+                    hotelIds = rawHotelData.split(',').map(s => Number(s.trim())).filter(Boolean);
+                }
+            }
+            await linkPackageToHotels(packageId, hotelIds);
+        }
+
         return res.status(200).json({ status: true, msg: 'Package has been updated successfully.' })
     } catch (error) {
         next(error)
@@ -253,6 +299,7 @@ const deletePackage = asyncHandler(async (req, res) => {
         await deletePackageModel({ id: packageId });
         await deleteItinerariesModel({ package_id: packageId });
         await deletePoliciesModel({ package_id: packageId });
+        await linkPackageToHotels(packageId, []);
         return res.status(200).json({ status: true, msg: 'Package deleted successfully.' })
     } catch (error) {
         console.log(error);
@@ -339,6 +386,12 @@ const duplicatePackage = asyncHandler(async (req, res, next) => {
                 polData.package_id = newPackageId;
                 return await createPackagePoliciesModel(polData);
             }));
+        }
+
+        // Duplicate reference hotels
+        const refHotels = await getPackageReferenceHotelsModel(packageId);
+        if (refHotels && refHotels.length > 0) {
+            await linkPackageToHotels(newPackageId, refHotels.map(h => h.id));
         }
 
         // Duplicate assets

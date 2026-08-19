@@ -8,6 +8,7 @@ const { getAllContactList, getAllCorporateLeadEnquiries, getParticularCorporateL
 const { getAllZone, getParticularZone, createZone, setZone, deleteZone } = require('../../controller/admin/service/adminZoneController');
 const { createUploader } = require('../../helper/uploadHelper');
 const { getAllCity, cityStatus, getParticularCity, getSearchCity, createCity, updateCity, getAllCountries } = require('../../controller/admin/service/adminCityController');
+const { getAllHotels, getParticularHotel, createHotel, updateHotel, deleteHotel, getAllHotelsDropdown } = require('../../controller/admin/service/adminHotelController');
 
 // Post Category 
 const uploadCategory = createUploader('image', 'category');
@@ -84,6 +85,28 @@ router.route('/createCity').post(adminAuthMiddleWare, uploadCity.fields([
 router.route('/updateCity').put(adminAuthMiddleWare, uploadCity.fields([
   { name: 'city_image', maxCount: 1 }
 ]), updateCity);
+
+
+// Hotels / Reference Hotels (Admin Routes)
+const uploadHotel = createUploader('image', 'hotels');
+router.route('/getHotels').get(adminAuthMiddleWare, getAllHotels);
+router.route('/getAllHotelsDropdown').get(adminAuthMiddleWare, getAllHotelsDropdown);
+router.route('/getParticularHotel').get(adminAuthMiddleWare, getParticularHotel).post(adminAuthMiddleWare, getParticularHotel);
+
+router.route('/createHotel').post(adminAuthMiddleWare, uploadHotel.fields([
+  { name: 'main_image', maxCount: 1 },
+  { name: 'images[]', maxCount: 10 }
+]), createHotel);
+
+router.route('/updateHotel').put(adminAuthMiddleWare, uploadHotel.fields([
+  { name: 'main_image', maxCount: 1 },
+  { name: 'images[]', maxCount: 10 }
+]), updateHotel).post(adminAuthMiddleWare, uploadHotel.fields([
+  { name: 'main_image', maxCount: 1 },
+  { name: 'images[]', maxCount: 10 }
+]), updateHotel);
+
+router.route('/deleteHotel').delete(adminAuthMiddleWare, deleteHotel).post(adminAuthMiddleWare, deleteHotel);
 
 
 module.exports = router;

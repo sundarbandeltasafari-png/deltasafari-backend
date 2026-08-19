@@ -21,6 +21,7 @@ const {
 } = require('../../model/service/packageModel');
 const { urlDecode } = require('../../helper/urlHelper');
 const { getAllPackageAssetsModel } = require('../../model/admin/package/adminPackageModel');
+const { getPackageReferenceHotelsModel } = require('../../model/admin/service/adminHotelModel');
 const { sendPaidBookingInvoiceDualEmail, sendAdminBookingInquiryEmail } = require('../../helper/serviceHelper');
 
 const razorpay = new Razorpay({
@@ -56,6 +57,26 @@ const getDestinations = asyncHandler(async (req, res) => {
     } catch (error) {
         console.log(error);
         return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' })
+    }
+})
+
+const getCorporateDestinations = asyncHandler(async (req, res) => {
+    try {
+        let destinations = await getDestinationsModel({ show_in_corporate: 1 });
+        if (!destinations || destinations.length === 0) {
+            destinations = await getDestinationsModel({ top_destination: 1 });
+            if (!destinations || destinations.length === 0) {
+                destinations = await getDestinationsModel();
+            }
+        }
+        destinations = (destinations || []).map((dest) => ({
+            ...dest,
+            image: dest?.image ? dest.image.replace(/\\/g, '/') : null
+        }));
+        return res.status(200).json({ status: true, msg: 'Corporate destinations', destinations: destinations });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
     }
 })
 
@@ -110,6 +131,40 @@ const getParticularPackage = asyncHandler(async (req, res, next) => {
         package.itineraries = await getAllPackageItinerariesModel({ package_id: package?.id });
         package.assets = await getAllPackageAssetsModel({ package_id: package?.id });
         package.policies = await getAllPackagePoliciesModel({ package_id: package?.id });
+
+        // Fetch Reference Hotels
+        const rawRefHotels = await getPackageReferenceHotelsModel(package?.id);
+        package.reference_hotels = (rawRefHotels || []).map(hotel => {
+            let amenities = [];
+            try {
+                amenities = typeof hotel.amenities === 'string' ? JSON.parse(hotel.amenities) : (hotel.amenities || []);
+            } catch (e) {
+                amenities = hotel.amenities ? String(hotel.amenities).split(',').map(s => s.trim()) : [];
+            }
+
+            let images = [];
+            try {
+                images = typeof hotel.images === 'string' ? JSON.parse(hotel.images) : (hotel.images || []);
+            } catch (e) {
+                images = [];
+            }
+
+            let roomTypes = [];
+            try {
+                roomTypes = typeof hotel.room_types === 'string' ? JSON.parse(hotel.room_types) : (hotel.room_types || []);
+            } catch (e) {
+                roomTypes = [];
+            }
+
+            return {
+                ...hotel,
+                main_image: hotel.main_image ? hotel.main_image.replace(/\\/g, '/') : null,
+                images: (images || []).map(img => img ? img.replace(/\\/g, '/') : img),
+                amenities: amenities,
+                room_types: roomTypes
+            };
+        });
+
         return res.status(200).json({ status: true, msg: 'Here is your package, book now!', package: package });
     } catch (error) {
         next(error);
@@ -490,6 +545,7 @@ const getDiscountedPackages = asyncHandler(async (req, res, next) => {
 module.exports = { 
     getHomePackages, 
     getDestinations, 
+    getCorporateDestinations,
     getParticularPackage, 
     createBookings, 
     createPackageRazorpayOrder,
