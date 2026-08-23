@@ -10,5 +10,6 @@ router.route('/verify-otp').post(verifyOtp);
 router.route('/otpvalidate').post(otpvalidate);
 router.route('/resend-otp').post(resendOtp);
 router.route('/getUserDetails').get(adminAuthMiddleWare, viewProfile);
+router.route('/viewprofile').get(adminAuthMiddleWare, viewProfile);
 
 module.exports = router;

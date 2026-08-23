@@ -3,8 +3,21 @@ const router = express.Router();
 
 
 const { adminAuthMiddleWare } = require('../../middleware/middleware');
-const { getAllUser, deleteUser, setUser, getAllAdminUser, insertAdminUser, userStatus, getAllCustomerUser, getParticularUser, getSearchUsers, getReferralOverview } = require('../../controller/admin/users/adminUserController');
-const { getPermisionMainRoute, createPermision, getPermisions, getParticularPermisions, editPermision } = require('../../controller/admin/users/adminPermisionController');
+const { 
+    getAllUser, 
+    deleteUser, 
+    setUser, 
+    getAllAdminUser, 
+    insertAdminUser, 
+    userStatus, 
+    getAllCustomerUser, 
+    getParticularUser, 
+    getSearchUsers, 
+    getReferralOverview,
+    getParticularAdminUser,
+    updateAdminUser
+} = require('../../controller/admin/users/adminUserController');
+const { getPermisionMainRoute, createPermision, getPermisions, getParticularPermisions, editPermision, deletePermision } = require('../../controller/admin/users/adminPermisionController');
 
 
 // Users
@@ -17,7 +30,10 @@ router.route('/getReferralOverview').get(adminAuthMiddleWare, getReferralOvervie
 
 
 // Admin User
-router.route('/getAllAdminUser').get(adminAuthMiddleWare, getAllAdminUser);
+router.route('/getAllAdminUser').get(adminAuthMiddleWare, getAllAdminUser).post(adminAuthMiddleWare, getAllAdminUser);
+router.route('/getAdminUserSearch').get(adminAuthMiddleWare, getAllAdminUser).post(adminAuthMiddleWare, getAllAdminUser);
+router.route('/getParticularAdminUser').get(adminAuthMiddleWare, getParticularAdminUser);
+router.route('/updateAdminUser').post(adminAuthMiddleWare, updateAdminUser);
 router.route('/insertAdminUser').post(adminAuthMiddleWare, insertAdminUser);
 router.route('/adminUserStatus').get(adminAuthMiddleWare, userStatus);
 
@@ -33,7 +49,8 @@ router.route('/getPermisionMainRoute').get(adminAuthMiddleWare, getPermisionMain
 router.route('/createPermision').post(adminAuthMiddleWare, createPermision);
 router.route('/getPermisions').get(adminAuthMiddleWare, getPermisions);
 router.route('/getParticularPermisions').get(adminAuthMiddleWare, getParticularPermisions);
-router.route('/editPermision').post(adminAuthMiddleWare, editPermision);
+router.route('/editPermision').post(adminAuthMiddleWare, editPermision).put(adminAuthMiddleWare, editPermision);
+router.route('/deletePermision').post(adminAuthMiddleWare, deletePermision).delete(adminAuthMiddleWare, deletePermision);
 
 
 module.exports = router;

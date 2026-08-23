@@ -3,7 +3,7 @@ const md5 = require('md5');
 
 function getParticularUser(email) {
     return new Promise((resolve, reject) => {
-        connection.query('SELECT * FROM user_master WHERE admin = 1 AND (email = ? OR phone = ?)', [email, email], (err, rows) => {
+        connection.query('SELECT * FROM user_master WHERE admin IN (1, 2) AND (email = ? OR phone = ?)', [email, email], (err, rows) => {
             if (err) {
                 reject(new Error("Something went wrong in database: " + err?.message));
             }
@@ -18,7 +18,7 @@ function getParticularUser(email) {
 
 function getParticularUserById(id) {
     return new Promise((resolve, reject) => {
-        connection.query('SELECT * FROM user_master WHERE id = ?', [id], (err, rows) => {
+        connection.query('SELECT * FROM user_master WHERE id = ? AND admin IN (1, 2)', [id], (err, rows) => {
             if (err) {
                 reject(new Error("Something went wrong in database: " + err?.message));
             }
@@ -33,7 +33,7 @@ function getParticularUserById(id) {
 
 function getLoginUser(email, password) {
     return new Promise((resolve, reject) => {
-        connection.query('SELECT * FROM user_master WHERE password = ? AND admin = 1 AND (email = ? OR phone = ?)', [password, email, email], (err, rows) => {
+        connection.query('SELECT * FROM user_master WHERE password = ? AND admin IN (1, 2) AND (email = ? OR phone = ?)', [password, email, email], (err, rows) => {
             if (err) {
                 reject(new Error("Something went wrong in database: " + err?.message));
             }
@@ -48,7 +48,7 @@ function getLoginUser(email, password) {
 
 function setUser(details, email) {
     return new Promise((resolve, reject) => {
-        connection.query('UPDATE user_master SET ? WHERE email = ? OR phone = ?', [details, email, email], (err, rows) => {
+        connection.query('UPDATE user_master SET ? WHERE admin IN (1, 2) AND (email = ? OR phone = ?)', [details, email, email], (err, rows) => {
             if (err) {
                 reject(new Error("Something went wrong in database: " + err?.message));
             }
@@ -63,7 +63,7 @@ function setUser(details, email) {
 
 function setUserByOtp(details, email, otp) {
     return new Promise((resolve, reject) => {
-        connection.query('UPDATE user_master SET ? WHERE otp = ? AND admin = 1 AND (email = ? OR phone = ?)', [details, otp, email, email], (err, rows) => {
+        connection.query('UPDATE user_master SET ? WHERE otp = ? AND admin IN (1, 2) AND (email = ? OR phone = ?)', [details, otp, email, email], (err, rows) => {
             if (err) {
                 reject(new Error("Something went wrong in database: " + err?.message));
             }
@@ -78,7 +78,7 @@ function setUserByOtp(details, email, otp) {
 
 function getOTPUser(email, otp) {
     return new Promise((resolve, reject) => {
-        connection.query('SELECT * FROM user_master WHERE otp = ? AND admin = 1 AND (email = ? OR phone = ?)', [otp, email, email], (err, rows) => {
+        connection.query('SELECT * FROM user_master WHERE otp = ? AND admin IN (1, 2) AND (email = ? OR phone = ?)', [otp, email, email], (err, rows) => {
             if (err) {
                 reject(new Error("Something went wrong in database: " + err?.message));
             }
@@ -93,7 +93,7 @@ function getOTPUser(email, otp) {
 
 function getTokenUser(id, email) {
     return new Promise((resolve, reject) => {
-        connection.query('SELECT * FROM user_master WHERE id = ? AND (email = ? OR phone = ?)', [id, email, email], (err, rows) => {
+        connection.query('SELECT * FROM user_master WHERE id = ? AND admin IN (1, 2) AND (email = ? OR phone = ?)', [id, email, email], (err, rows) => {
             if (err) {
                 reject(new Error("Something went wrong in database: " + err?.message));
             }

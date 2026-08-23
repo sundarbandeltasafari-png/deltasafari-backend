@@ -1,6 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const { validateToken } = require('./jwtMiddleware');
-const { getParticularUser } = require('../model/admin/adminAuthModel');
+const { getParticularUser, getParticularUserById } = require('../model/admin/adminAuthModel');
 const { getParticularUserDetails } = require('../model/auth/authModel');
 
 const authMiddleWare = asyncHandler(async (req, res, next) => {
@@ -23,19 +23,24 @@ const authMiddleWare = asyncHandler(async (req, res, next) => {
 const adminAuthMiddleWare = asyncHandler(async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     if (authHeader) {
-        const token = authHeader.split('Bearer ')[1];
+        const token = authHeader.startsWith('Bearer ') ? authHeader.split('Bearer ')[1] : authHeader;
         const userDetails = validateToken(token);
         if (!userDetails.status) {
-            return res.status(400).json({ status: false, msg: 'Invalid authentication.' })
+            return res.status(401).json({ status: false, msg: 'Invalid or expired authentication token.' });
         }
-        const adminUser = await getParticularUser(userDetails?.data?.email)
-        if (adminUser.length == 0) {
-            return res.status(400).json({ status: false, msg: 'Invalid authentication.' })
+        let adminUser = [];
+        if (userDetails?.data?.email || userDetails?.data?.phone) {
+            adminUser = await getParticularUser(userDetails?.data?.email || userDetails?.data?.phone);
+        } else if (userDetails?.data?.id) {
+            adminUser = await getParticularUserById(userDetails?.data?.id);
+        }
+        if (adminUser.length === 0) {
+            return res.status(401).json({ status: false, msg: 'Administrator account not found or access denied.' });
         }
         req.user = adminUser[0];
         next();
     } else {
-        res.status(401).send('Unauthorized: Bearer token missing');
+        res.status(401).json({ status: false, msg: 'Unauthorized: Bearer token missing.' });
     }
 });
 

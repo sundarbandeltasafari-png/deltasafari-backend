@@ -2,21 +2,21 @@ const dotenv = require('dotenv');
 dotenv.config();
 var mysql = require('mysql');
 
-// var connection = mysql.createPool({
-//     connectionLimit: 10,
-//     host: process.env.DBHOST || 'localhost',
-//     user: process.env.DBUSER || 'root',
-//     password: process.env.DBPASS || '',
-//     database: process.env.DB || 'deltasafari'
-// });
-
 var connection = mysql.createPool({
     connectionLimit: 10,
-    host: '127.0.0.1',
-    user: 'u662254688_deltasafari',
-    password: 'Admin1q2w--!',
-    database: 'u662254688_deltasafari'
+    host: process.env.DBHOST || 'localhost',
+    user: process.env.DBUSER || 'root',
+    password: process.env.DBPASS || '',
+    database: process.env.DB || 'deltasafari'
 });
+
+// var connection = mysql.createPool({
+//     connectionLimit: 10,
+//     host: '127.0.0.1',
+//     user: 'u662254688_deltasafari',
+//     password: 'Admin1q2w--!',
+//     database: 'u662254688_deltasafari'
+// });
 
 
 // Auto Migration for Referral Program & Tables
@@ -389,6 +389,180 @@ const runMigrations = () => {
                                 }
                             });
                         }
+                    });
+                }
+            });
+        });
+
+        // Auto Migration for WhatsApp CRM Tables
+        const createWhatsAppContactsTable = `
+            CREATE TABLE IF NOT EXISTS whatsapp_contacts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                wa_id VARCHAR(50) NOT NULL UNIQUE,
+                name VARCHAR(255) NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_wa_id (wa_id),
+                INDEX idx_updated_at (updated_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `;
+        connection.query(createWhatsAppContactsTable, (err) => {
+            if (err) console.error("Error creating whatsapp_contacts table:", err.message);
+        });
+
+        const createWhatsAppMessagesTable = `
+            CREATE TABLE IF NOT EXISTS whatsapp_messages (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                contact_id INT NOT NULL,
+                message_id VARCHAR(255) NULL,
+                sender_type ENUM('customer', 'business') DEFAULT 'customer',
+                message_text TEXT NULL,
+                media_url TEXT NULL,
+                media_type VARCHAR(50) NULL,
+                timestamp VARCHAR(50) NULL,
+                status VARCHAR(50) DEFAULT 'delivered',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_contact_id (contact_id),
+                INDEX idx_message_id (message_id),
+                INDEX idx_created_at (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `;
+        connection.query(createWhatsAppMessagesTable, (err) => {
+            if (err) console.error("Error creating whatsapp_messages table:", err.message);
+        });
+
+        // Auto Migration for Permissions & Sidebar Modules (CRM intentionally excluded)
+        const createMainRoutesTable = `
+            CREATE TABLE IF NOT EXISTS main_routes (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                route VARCHAR(255) NOT NULL,
+                status INT DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_route_name (name)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `;
+        connection.query(createMainRoutesTable, (err) => {
+            if (err) console.error("Error creating main_routes table:", err.message);
+
+            const sidebarOptions = [
+                { name: 'Dashboards', route: '/dashboard' },
+                { name: 'Cities', route: '/cities' },
+                { name: 'Package', route: '/package' },
+                { name: 'Hotels', route: '/hotels' },
+                { name: 'Calendar', route: '/calendar' },
+                { name: 'Bookings', route: '/bookings' },
+                { name: 'Corporate Lead', route: '/corporate-lead' },
+                { name: 'Custom Package', route: '/custom-package' },
+                { name: 'Website Settings', route: '/websitesettings' },
+                { name: 'General Settings', route: '/generalsettings' },
+                { name: 'FAQ Pages', route: '/faqpages' },
+                { name: 'SEO Pages', route: '/seopages' },
+                { name: 'Common Pages', route: '/commonpages' },
+                { name: 'Contacts', route: '/contacts' },
+                { name: 'Users', route: '/users' },
+                { name: 'Permision Group', route: '/permision' },
+                { name: 'Admin Users', route: '/adminusers' },
+                { name: 'Referral Program', route: '/referrals' }
+            ];
+
+            sidebarOptions.forEach((item) => {
+                connection.query(`INSERT IGNORE INTO main_routes (name, route, status) VALUES (?, ?, 1)`, [item.name, item.route]);
+            });
+
+            // Ensure CRM, News, News Category, Reporters, Zone are removed from permissions
+            connection.query(`
+                DELETE FROM main_routes 
+                WHERE name LIKE '%CRM%' 
+                   OR name LIKE '%WhatsApp%' 
+                   OR name LIKE '%News%' 
+                   OR name LIKE '%Blog%' 
+                   OR name LIKE '%Reporter%' 
+                   OR name LIKE '%Zone%' 
+                   OR name LIKE '%Destination%' 
+                   OR route LIKE '%/crm%' 
+                   OR route LIKE '%/whatsapp%' 
+                   OR route LIKE '%/news%' 
+                   OR route LIKE '%/reporter%' 
+                   OR route LIKE '%/zone%'
+            `);
+        });
+
+        const createPermisionGroupTable = `
+            CREATE TABLE IF NOT EXISTS permision_group (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                status INT DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `;
+        connection.query(createPermisionGroupTable, (err) => {
+            if (err) console.error("Error creating permision_group table:", err.message);
+        });
+
+        const createPermisionRouteTable = `
+            CREATE TABLE IF NOT EXISTS permision_route (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                permision_group_id INT NOT NULL,
+                route INT NOT NULL,
+                view_route INT DEFAULT 0,
+                add_route INT DEFAULT 0,
+                edit_route INT DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX(permision_group_id),
+                INDEX(route)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `;
+        connection.query(createPermisionRouteTable, (err) => {
+            if (err) console.error("Error creating permision_route table:", err.message);
+        });
+
+        const createAddressesTable = `
+            CREATE TABLE IF NOT EXISTS addresses (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                street VARCHAR(255) NULL,
+                city VARCHAR(100) NULL,
+                state VARCHAR(100) NULL,
+                zip_code VARCHAR(50) NULL,
+                country VARCHAR(100) NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX(user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `;
+        connection.query(createAddressesTable, (err) => {
+            if (err) console.error("Error creating addresses table:", err.message);
+        });
+
+        const createSocialsTable = `
+            CREATE TABLE IF NOT EXISTS socials (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                platform VARCHAR(100) NULL,
+                url TEXT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX(user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `;
+        connection.query(createSocialsTable, (err) => {
+            if (err) console.error("Error creating socials table:", err.message);
+        });
+
+        const userCols = [
+            { name: 'email', type: 'VARCHAR(255) NULL' },
+            { name: 'permision_group_id', type: 'INT NULL DEFAULT NULL' },
+            { name: 'role_id', type: 'INT NULL DEFAULT NULL' },
+            { name: 'bio', type: 'TEXT NULL' },
+            { name: 'profile_picture', type: 'VARCHAR(255) NULL' },
+            { name: 'status', type: 'INT DEFAULT 1' },
+            { name: 'admin', type: 'INT DEFAULT 0' }
+        ];
+        userCols.forEach((c) => {
+            connection.query(`SHOW COLUMNS FROM user_master LIKE '${c.name}'`, (cErr, rows) => {
+                if (!cErr && rows && rows.length === 0) {
+                    connection.query(`ALTER TABLE user_master ADD COLUMN ${c.name} ${c.type}`, (aErr) => {
+                        if (aErr) console.error(`Error adding ${c.name} to user_master:`, aErr.message);
                     });
                 }
             });

@@ -60,6 +60,10 @@ console.log("Checking Absolute Static Path:", path.resolve(__dirname, 'uploads')
 const fs = require('fs');
 console.log("Does folder exist?:", fs.existsSync(path.resolve(__dirname, 'uploads')));
 
+const whatsappWebhookRoute = require('./route/whatsappWebhookRoute');
+const adminWhatsappRoute = require('./route/admin/adminWhatsappRoute');
+const crmFollowupRoute = require('./route/admin/crmFollowupRoute');
+
 // Frontend
 app.get('/', async (req, res) => {
     res.send("Server Started")
@@ -67,6 +71,11 @@ app.get('/', async (req, res) => {
 const { razorpayWebhook } = require('./controller/service/packageControler');
 app.post('/webhook/razorpay', razorpayWebhook);
 app.post('/razorpay-webhook', razorpayWebhook);
+
+// WhatsApp Business Cloud API Webhooks
+app.use('/webhook/whatsapp', whatsappWebhookRoute);
+app.use('/api/whatsapp-webhook', whatsappWebhookRoute);
+app.use('/webhook/whatsapp.php', whatsappWebhookRoute);
 
 app.use('/auth', authRoute)
 app.use('/user', userRoute)
@@ -82,6 +91,9 @@ app.use('/admin/package', adminPackageRoute)
 app.use('/admin/settings', adminSettingsRoute)
 app.use('/admin/contact-query', adminContactQueryRoute)
 app.use('/admin/contact-queries', adminContactQueryRoute)
+app.use('/admin/whatsapp', adminWhatsappRoute)
+app.use('/admin/crm/followups', crmFollowupRoute)
+app.use('/admin/whatsapp/followups', crmFollowupRoute)
 
 // 404
 app.use('/{*path}', (req, res) => {

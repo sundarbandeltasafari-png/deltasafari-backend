@@ -10,7 +10,9 @@ const {
     getAllUserModel,
     getUserStatusModel,
     getParticularUserModel,
-    getSearchUsersModel
+    getSearchUsersModel,
+    getParticularAdminUserModel,
+    getAdminUsersPaginatedModel
 } = require('../../../model/admin/user/adminUserModel');
 
 const connection = require('../../../Connection');
@@ -39,50 +41,266 @@ const userStatus = asyncHandler(async (req, res, next) => {
 // Admin User 
 const insertAdminUser = asyncHandler(async (req, res, next) => {
     try {
-        console.log(req?.body)
-        if (!req?.body?.account_details || !req?.body?.account_details?.password || !req?.body?.account_details?.phone || (req?.body?.account_details?.password != req?.body?.account_details?.confirm_password)) {
-            const error = new Error('Please enter a valid User details.');
-            res.status(400);
-            next(error);
+        const accountDetails = req?.body?.account_details || {};
+        const personalInfo = req?.body?.personal_info || {};
+        const socialLinksData = req?.body?.social_links || {};
+
+        const phone = (accountDetails?.phone || '').toString().trim();
+        const email = (accountDetails?.email || '').toString().trim();
+        const password = accountDetails?.password || '';
+        const confirmPassword = accountDetails?.confirm_password || '';
+
+        if (!phone && !email) {
+            return res.status(400).json({ status: false, msg: 'Please enter a valid Phone number or Email address.' });
         }
+        if (!password) {
+            return res.status(400).json({ status: false, msg: 'Please enter a password.' });
+        }
+        if (password !== confirmPassword) {
+            return res.status(400).json({ status: false, msg: 'Password and Confirm Password do not match.' });
+        }
+
+        // Check if email already exists in user_master
+        if (email) {
+            const existingEmailUser = await new Promise((resolve) => {
+                connection.query(`SELECT id, email, first_name, last_name, admin FROM user_master WHERE email = ?`, [email], (err, rows) => {
+                    resolve(rows || []);
+                });
+            });
+            if (existingEmailUser && existingEmailUser.length > 0) {
+                return res.status(400).json({ 
+                    status: false, 
+                    msg: `An account with the email address "${email}" already exists. Please use a different email or update the existing account.` 
+                });
+            }
+        }
+
+        // Check if phone already exists in user_master
+        if (phone) {
+            const existingPhoneUser = await new Promise((resolve) => {
+                connection.query(`SELECT id, phone, first_name, last_name, admin FROM user_master WHERE phone = ?`, [phone], (err, rows) => {
+                    resolve(rows || []);
+                });
+            });
+            if (existingPhoneUser && existingPhoneUser.length > 0) {
+                return res.status(400).json({ 
+                    status: false, 
+                    msg: `An account with the phone number "${phone}" already exists. Please use a different phone number.` 
+                });
+            }
+        }
+
+        const permisionGroupId = accountDetails?.permision_group_id || req?.body?.permision_group_id || null;
+
         const user = {
-            phone: req?.body?.account_details?.phone,
-            password: md5(req?.body?.account_details?.password),
-            first_name: req?.body?.personal_info?.first_name,
-            last_name: req?.body?.personal_info?.last_name,
-            bio: req?.body?.personal_info?.bio,
-            profile_picture: req?.body?.personal_info?.profile_picture_url,
-            admin: 2
-        }
+            phone: phone || null,
+            email: email || null,
+            password: md5(password),
+            first_name: personalInfo?.first_name || '',
+            last_name: personalInfo?.last_name || '',
+            bio: personalInfo?.bio || '',
+            profile_picture: personalInfo?.profile_picture_url || '',
+            permision_group_id: permisionGroupId,
+            role_id: permisionGroupId,
+            admin: 2,
+            status: 1
+        };
+
         const reporter = await insertUserModel(user);
-        if (req?.body?.social_links) {
-            const socialLinks = await Promise.all(
-                Object.entries(req?.body?.social_links).map(async ([key, value]) => {
-                    const social = await insertUserSocialModel({ user_id: reporter?.insertId, url: value, platform: key });
-                }))
+        const insertId = reporter?.insertId;
+
+        if (insertId && socialLinksData) {
+            await Promise.all(
+                Object.entries(socialLinksData).map(async ([key, value]) => {
+                    if (value && value.trim()) {
+                        await insertUserSocialModel({ user_id: insertId, url: value.trim(), platform: key });
+                    }
+                })
+            );
         }
-        const addressdata = {
-            street: req?.body?.personal_info?.street,
-            city: req?.body?.personal_info?.city,
-            state: req?.body?.personal_info?.state,
-            zip_code: req?.body?.personal_info?.zip_code,
-            country: req?.body?.personal_info?.country
+
+        if (insertId) {
+            const addressdata = {
+                street: personalInfo?.street || '',
+                city: personalInfo?.city || '',
+                state: personalInfo?.state || '',
+                zip_code: personalInfo?.zip_code || '',
+                country: personalInfo?.country || ''
+            };
+            await insertUserAddressModel({ user_id: insertId, ...addressdata });
         }
-        const address = await insertUserAddressModel({ user_id: reporter?.insertId, ...addressdata });
-        return res.status(200).json({ status: true, msg: 'User update successfully.', users: reporter })
+
+        return res.status(200).json({ status: true, msg: 'Admin user created successfully.', users: reporter, insertId: insertId });
     } catch (error) {
         next(error);
     }
-})
+});
 
 const getAllAdminUser = asyncHandler(async (req, res, next) => {
     try {
-        const reporters = await getAllUserModel({ admin: 2 });
-        return res.status(200).json({ status: true, msg: 'All reporters..', reporters: reporters })
+        const page = parseInt(req?.query?.page || req?.body?.page || 1);
+        const limit = parseInt(req?.query?.limit || req?.body?.limit || 25);
+        const search = req?.query?.search || req?.body?.searchData || req?.body?.search || '';
+        const status = req?.query?.status !== undefined ? req?.query?.status : req?.body?.status;
+        const role = req?.query?.role !== undefined ? req?.query?.role : req?.body?.role;
+
+        const result = await getAdminUsersPaginatedModel({ page, limit, search, status, role });
+        return res.status(200).json({
+            status: true,
+            msg: 'All admin users..',
+            adminUsers: result.adminUsers,
+            reporters: result.adminUsers,
+            total: result.total,
+            page: result.page,
+            limit: result.limit,
+            hasMore: result.hasMore
+        });
     } catch (error) {
         next(error);
     }
-})
+});
+
+const getParticularAdminUser = asyncHandler(async (req, res, next) => {
+    try {
+        let rawId = req?.query?.id || req?.params?.id || req?.body?.id;
+        if (!rawId) {
+            return res.status(400).json({ status: false, msg: 'Please provide admin user id.' });
+        }
+
+        let targetId = rawId;
+        if (typeof rawId === 'string' && isNaN(Number(rawId))) {
+            try {
+                const decoded = urlDecode(rawId);
+                if (decoded && !isNaN(Number(decoded))) {
+                    targetId = Number(decoded);
+                }
+            } catch (e) {
+                targetId = rawId;
+            }
+        } else {
+            targetId = Number(rawId);
+        }
+
+        const user = await getParticularAdminUserModel(targetId);
+        if (!user) {
+            return res.status(404).json({ status: false, msg: 'Admin user not found.' });
+        }
+        return res.status(200).json({ status: true, msg: 'Admin user details', user: { ...user, password: '' } });
+    } catch (error) {
+        next(error);
+    }
+});
+
+const updateAdminUser = asyncHandler(async (req, res, next) => {
+    try {
+        let rawId = req?.body?.id || req?.query?.id;
+        if (!rawId) {
+            return res.status(400).json({ status: false, msg: 'Admin user ID is required.' });
+        }
+
+        let id = rawId;
+        if (typeof rawId === 'string' && isNaN(Number(rawId))) {
+            try {
+                const decoded = urlDecode(rawId);
+                if (decoded && !isNaN(Number(decoded))) {
+                    id = Number(decoded);
+                }
+            } catch (e) {
+                id = rawId;
+            }
+        } else {
+            id = Number(rawId);
+        }
+
+        const accountDetails = req?.body?.account_details || {};
+        const personalInfo = req?.body?.personal_info || {};
+        const socialLinksData = req?.body?.social_links || {};
+
+        // Check for email collision with other users
+        if (accountDetails.email && accountDetails.email.toString().trim()) {
+            const emailToCheck = accountDetails.email.toString().trim();
+            const collision = await new Promise((resolve) => {
+                connection.query(`SELECT id FROM user_master WHERE email = ? AND id != ?`, [emailToCheck, id], (err, rows) => {
+                    resolve(rows || []);
+                });
+            });
+            if (collision && collision.length > 0) {
+                return res.status(400).json({ status: false, msg: `The email "${emailToCheck}" is already in use by another account.` });
+            }
+        }
+
+        // Check for phone collision with other users
+        if (accountDetails.phone && accountDetails.phone.toString().trim()) {
+            const phoneToCheck = accountDetails.phone.toString().trim();
+            const collision = await new Promise((resolve) => {
+                connection.query(`SELECT id FROM user_master WHERE phone = ? AND id != ?`, [phoneToCheck, id], (err, rows) => {
+                    resolve(rows || []);
+                });
+            });
+            if (collision && collision.length > 0) {
+                return res.status(400).json({ status: false, msg: `The phone number "${phoneToCheck}" is already in use by another account.` });
+            }
+        }
+
+        const updateData = {};
+        if (personalInfo.first_name !== undefined) updateData.first_name = personalInfo.first_name.trim();
+        if (personalInfo.last_name !== undefined) updateData.last_name = personalInfo.last_name.trim();
+        if (accountDetails.phone !== undefined) updateData.phone = accountDetails.phone.trim();
+        if (accountDetails.email !== undefined) updateData.email = accountDetails.email.trim();
+        if (personalInfo.bio !== undefined) updateData.bio = personalInfo.bio;
+        if (personalInfo.profile_picture_url !== undefined && personalInfo.profile_picture_url) {
+            updateData.profile_picture = personalInfo.profile_picture_url;
+        }
+        if (req?.body?.status !== undefined) {
+            updateData.status = parseInt(req.body.status);
+        }
+        const permisionGroupId = accountDetails.permision_group_id || req?.body?.permision_group_id;
+        if (permisionGroupId !== undefined) {
+            updateData.permision_group_id = permisionGroupId ? parseInt(permisionGroupId) : null;
+            updateData.role_id = permisionGroupId ? parseInt(permisionGroupId) : null;
+        }
+
+        // Only update password if a new one is provided and valid
+        if (accountDetails.password && accountDetails.password.trim().length >= 6) {
+            updateData.password = md5(accountDetails.password.trim());
+        }
+
+        if (Object.keys(updateData).length > 0) {
+            await setUserModel(updateData, id);
+        }
+
+        // Update Address if provided
+        if (personalInfo.street !== undefined || personalInfo.city !== undefined || personalInfo.state !== undefined) {
+            const addressData = {
+                street: personalInfo.street || '',
+                city: personalInfo.city || '',
+                state: personalInfo.state || '',
+                zip_code: personalInfo.zip_code || '',
+                country: personalInfo.country || ''
+            };
+            connection.query(`DELETE FROM addresses WHERE user_id = ?`, [id], async () => {
+                await insertUserAddressModel({ user_id: id, ...addressData });
+            });
+        }
+
+        // Update Socials if provided
+        if (socialLinksData && Object.keys(socialLinksData).length > 0) {
+            connection.query(`DELETE FROM socials WHERE user_id = ?`, [id], async () => {
+                await Promise.all(
+                    Object.entries(socialLinksData).map(async ([key, val]) => {
+                        if (val && val.trim()) {
+                            await insertUserSocialModel({ user_id: id, url: val.trim(), platform: key });
+                        }
+                    })
+                );
+            });
+        }
+
+        return res.status(200).json({ status: true, msg: 'Admin user updated successfully.' });
+    } catch (error) {
+        next(error);
+    }
+});
 
 
 // Customer User
@@ -244,4 +462,17 @@ const getReferralOverview = asyncHandler(async (req, res, next) => {
     }
 });
 
-module.exports = { getAllUser, setUser, deleteUser, getAllAdminUser, insertAdminUser, userStatus, getAllCustomerUser, getParticularUser, getSearchUsers, getReferralOverview }
+module.exports = { 
+    getAllUser, 
+    setUser, 
+    deleteUser, 
+    getAllAdminUser, 
+    insertAdminUser, 
+    userStatus, 
+    getAllCustomerUser, 
+    getParticularUser, 
+    getSearchUsers, 
+    getReferralOverview,
+    getParticularAdminUser,
+    updateAdminUser
+};

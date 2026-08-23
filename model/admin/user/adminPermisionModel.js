@@ -3,20 +3,65 @@ const { connect } = require('../../../Connection');
 const connection = require('../../../Connection');
 const { buildCondition } = require('../../../helper/modelHelper');
 
+const SYSTEM_SIDEBAR_ROUTES = [
+    { id: 1, name: 'Dashboards', route: '/dashboard', status: 1 },
+    { id: 3, name: 'Cities', route: '/cities', status: 1 },
+    { id: 4, name: 'Package', route: '/package', status: 1 },
+    { id: 5, name: 'Hotels', route: '/hotels', status: 1 },
+    { id: 6, name: 'Calendar', route: '/calendar', status: 1 },
+    { id: 7, name: 'Bookings', route: '/bookings', status: 1 },
+    { id: 8, name: 'Corporate Lead', route: '/corporate-lead', status: 1 },
+    { id: 9, name: 'Custom Package', route: '/custom-package', status: 1 },
+    { id: 10, name: 'Website Settings', route: '/websitesettings', status: 1 },
+    { id: 11, name: 'General Settings', route: '/generalsettings', status: 1 },
+    { id: 12, name: 'FAQ Pages', route: '/faqpages', status: 1 },
+    { id: 13, name: 'SEO Pages', route: '/seopages', status: 1 },
+    { id: 14, name: 'Common Pages', route: '/commonpages', status: 1 },
+    { id: 15, name: 'Contacts', route: '/contacts', status: 1 },
+    { id: 18, name: 'Users', route: '/users', status: 1 },
+    { id: 19, name: 'Permision Group', route: '/permision', status: 1 },
+    { id: 20, name: 'Admin Users', route: '/adminusers', status: 1 },
+    { id: 21, name: 'Referral Program', route: '/referrals', status: 1 }
+];
+
+const isExcludedRoute = (name = '', route = '') => {
+    const n = name.toLowerCase().trim();
+    const r = route.toLowerCase().trim();
+    return (
+        n.includes('crm') || 
+        n.includes('whatsapp') || 
+        n.includes('news') || 
+        n.includes('blog') || 
+        n.includes('reporter') || 
+        n.includes('zone') || 
+        n.includes('destination') ||
+        r.includes('crm') || 
+        r.includes('whatsapp') || 
+        r.includes('news') || 
+        r.includes('reporter') || 
+        r.includes('zone')
+    );
+};
+
 function getAllPermisionMainModel(condition) {
-    const customcondition = buildCondition(condition);
-    return new Promise((resolve, reject) => {
-        connection.query(`SELECT * FROM main_routes ${customcondition} ORDER BY id DESC`, (err, rows) => {
-            if (err) {
-                reject(new Error("Something went worng in database!" + err?.message));
+    return new Promise((resolve) => {
+        connection.query(`SELECT * FROM main_routes ORDER BY id ASC`, (err, rows) => {
+            if (err || !rows || rows.length === 0) {
+                return resolve(SYSTEM_SIDEBAR_ROUTES);
             }
-            if (rows) {
-                resolve(JSON.parse(JSON.stringify(rows)));
-            } else {
-                resolve([]);
-            }
+
+            const dbRows = JSON.parse(JSON.stringify(rows));
+            const formatted = dbRows.map(r => ({
+                id: r.id,
+                name: r.name,
+                route: r.viewpath || r.route || '',
+                viewpath: r.viewpath || r.route || '',
+                status: r.status
+            })).filter(r => !isExcludedRoute(r.name, r.route));
+
+            resolve(formatted);
         });
-    })
+    });
 }
 
 function insertGroup(details) {
@@ -68,7 +113,8 @@ function getAllPermisionsModel(condition) {
                                     'view_route', permision_route.view_route,
                                     'add_route', permision_route.add_route,
                                     'edit_route', permision_route.edit_route,
-                                    'name', main_routes.name
+                                    'route', COALESCE(main_routes.viewpath, permision_route.route),
+                                    'name', COALESCE(main_routes.name, permision_route.route)
                                 )
                             ),
                             ']'
@@ -82,7 +128,7 @@ function getAllPermisionsModel(condition) {
                 ON permision_group.id = permision_route.permision_group_id
 
                 LEFT JOIN main_routes 
-                ON main_routes.id = permision_route.route
+                ON (main_routes.id = permision_route.route OR main_routes.viewpath = permision_route.route)
 
                 ${customcondition}
                 
@@ -246,11 +292,45 @@ function deletePermisionRouteModel(condition) {
 //     })
 // }
 
+function countUsersByPermissionGroupModel(groupId) {
+    return new Promise((resolve, reject) => {
+        connection.query(
+            `SELECT COUNT(*) AS user_count FROM user_master WHERE permision_group_id = ? OR role_id = ?`,
+            [groupId, groupId],
+            (err, rows) => {
+                if (err) {
+                    reject(new Error("Database error while checking assigned users: " + err?.message));
+                } else {
+                    resolve(rows && rows.length > 0 ? rows[0].user_count : 0);
+                }
+            }
+        );
+    });
+}
+
+function deletePermisionGroupModel(groupId) {
+    return new Promise((resolve, reject) => {
+        connection.query(`DELETE FROM permision_route WHERE permision_group_id = ?`, [groupId], (rErr) => {
+            if (rErr) {
+                return reject(new Error("Error deleting permission routes: " + rErr?.message));
+            }
+            connection.query(`DELETE FROM permision_group WHERE id = ?`, [groupId], (gErr, result) => {
+                if (gErr) {
+                    return reject(new Error("Error deleting permission group: " + gErr?.message));
+                }
+                resolve(result);
+            });
+        });
+    });
+}
+
 module.exports = { 
     getAllPermisionMainModel, 
     insertGroup, 
     insertPermisionRoute, 
     getAllPermisionsModel,
     updateGroupModel,
-    deletePermisionRouteModel
+    deletePermisionRouteModel,
+    countUsersByPermissionGroupModel,
+    deletePermisionGroupModel
 }

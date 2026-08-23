@@ -3,6 +3,53 @@ const { getParticularUser, getLoginUser, getOTPUser, setUser, setUserByOtp, getT
 const md5 = require('md5');
 const { getToken } = require('../../middleware/jwtMiddleware');
 const { sendOtp, validateEmail } = require('../../helper/serviceHelper');
+const connection = require('../../Connection');
+
+const getUserPermissions = async (userObj) => {
+    if (!userObj) return [];
+    if (userObj.admin === 1) {
+        return ['*']; // Super Admin has all permissions
+    }
+    const groupId = userObj.permision_group_id || userObj.role_id;
+    if (!groupId) {
+        return []; // No permission group assigned
+    }
+    return new Promise((resolve) => {
+        const sql = `
+            SELECT 
+                pr.route,
+                pr.view_route,
+                pr.add_route,
+                pr.edit_route,
+                mr.viewpath,
+                mr.name
+            FROM permision_route pr
+            LEFT JOIN main_routes mr ON (mr.id = pr.route OR mr.viewpath = pr.route)
+            WHERE pr.permision_group_id = ?
+        `;
+        connection.query(sql, [groupId], (err, rows) => {
+            if (err || !rows) return resolve([]);
+            
+            const allowedRoutes = new Set();
+            rows.forEach(r => {
+                const basePath = r.viewpath || (typeof r.route === 'string' && r.route.startsWith('/') ? r.route : null);
+                if (basePath) {
+                    if (r.view_route === 1) {
+                        allowedRoutes.add(basePath);
+                    }
+                    if (r.add_route === 1) {
+                        allowedRoutes.add(`${basePath}/add`);
+                    }
+                    if (r.edit_route === 1) {
+                        allowedRoutes.add(`${basePath}/edit`);
+                        allowedRoutes.add(`${basePath}/delete`);
+                    }
+                }
+            });
+            resolve(Array.from(allowedRoutes));
+        });
+    });
+};
 
 const login = asyncHandler(async (req, res, next) => {
     try {
@@ -19,7 +66,14 @@ const login = asyncHandler(async (req, res, next) => {
         }
         const userDetails = { ...user[0], password: '' };
         const loginToken = getToken(userDetails);
-        return res.status(200).json({ status: true, msg: 'Admin logged in successfully!', token: loginToken?.token, userDetails: userDetails });
+        const permissions = await getUserPermissions(user[0]);
+        return res.status(200).json({ 
+            status: true, 
+            msg: 'Admin logged in successfully!', 
+            token: loginToken?.token, 
+            userDetails: userDetails,
+            permissions: permissions 
+        });
     } catch (error) {
         return res.status(500).json({ status: false, msg: error?.message || 'Authentication error.' });
     }
@@ -147,7 +201,14 @@ const viewProfile = asyncHandler(async (req, res, next) => {
         }
         const user = [req?.user];
         const loginUser = await getTokenUser(user[0]?.id, user[0]?.email);
-        return res.status(200).json({ status: true, msg: 'User Details.', userDetails: { ...loginUser[0], password: '' } });
+        const userObj = loginUser && loginUser.length > 0 ? loginUser[0] : user[0];
+        const permissions = await getUserPermissions(userObj);
+        return res.status(200).json({ 
+            status: true, 
+            msg: 'User Details.', 
+            userDetails: { ...userObj, password: '' },
+            permissions: permissions 
+        });
     } catch (error) {
         return res.status(500).json({ status: false, msg: error?.message || 'Server error.' });
     }
