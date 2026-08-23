@@ -389,18 +389,212 @@ const deleteUser = asyncHandler(async (req, res, next) => {
 
 const getParticularUser = asyncHandler(async (req, res, next) => {
     try {
-        const id = req?.query?.id;
-        if (!id) {
-            const error = new Error('Please enter a valid user.');
-            res.status(400);
-            next(error);
+        const rawId = req?.query?.id;
+        if (!rawId) {
+            return res.status(400).json({ status: false, msg: 'Please provide a valid user ID.' });
         }
-        const users = await getParticularUserModel({ id: urlDecode(id) });
-        return res.status(200).json({ status: true, msg: 'Particuler User..', user: users.length > 0 ? users[0] : null })
+
+        let userId = rawId;
+        if (typeof rawId === 'string' && isNaN(Number(rawId))) {
+            try {
+                const decoded = urlDecode(rawId);
+                if (decoded && !isNaN(Number(decoded))) {
+                    userId = Number(decoded);
+                }
+            } catch (e) {
+                userId = rawId;
+            }
+        } else {
+            userId = Number(rawId);
+        }
+
+        // 1. Fetch User Record
+        const userRows = await new Promise((resolve, reject) => {
+            connection.query('SELECT * FROM user_master WHERE id = ?', [userId], (err, rows) => {
+                if (err) return reject(err);
+                resolve(rows || []);
+            });
+        });
+
+        if (!userRows || userRows.length === 0) {
+            return res.status(404).json({ status: false, msg: 'User not found.' });
+        }
+
+        const user = JSON.parse(JSON.stringify(userRows[0]));
+        delete user.password; // Remove password hash for security
+
+        const userEmail = user.email ? user.email.trim() : '';
+        const userPhone = user.phone ? user.phone.trim() : '';
+
+        // 2. Fetch Addresses
+        const addresses = await new Promise((resolve) => {
+            connection.query('SELECT * FROM addresses WHERE user_id = ?', [userId], (err, rows) => {
+                resolve(rows || []);
+            });
+        });
+
+        // 3. Fetch Socials
+        const socials = await new Promise((resolve) => {
+            connection.query('SELECT * FROM socials WHERE user_id = ?', [userId], (err, rows) => {
+                resolve(rows || []);
+            });
+        });
+
+        // 4. Fetch Saved Packages / Wishlist (with package assets and details)
+        const savedPackages = await new Promise((resolve) => {
+            connection.query(`
+                SELECT sp.id as saved_id, sp.created_at as saved_at,
+                       p.id as package_id, p.name as package_name, p.slug, p.price, p.offer_price,
+                       p.duration, p.duration_night, p.description,
+                       pa.path as package_image, pt.name as package_type_name,
+                       z.name as destination_name
+                FROM saved_packages sp
+                LEFT JOIN packages_master p ON sp.package_id = p.id
+                LEFT JOIN package_assets pa ON p.id = pa.package_id
+                LEFT JOIN package_types pt ON p.package_type = pt.id
+                LEFT JOIN zone z ON p.to_destination = z.id
+                WHERE sp.user_id = ?
+                GROUP BY sp.id
+                ORDER BY sp.id DESC
+            `, [userId], (err, rows) => {
+                resolve(rows || []);
+            });
+        });
+
+        // 5. Fetch Bookings (matching user_id OR phone OR email)
+        const bookings = await new Promise((resolve) => {
+            connection.query(`
+                SELECT b.*, p.name as package_name, p.slug as package_slug, pa.path as package_image,
+                       pt.name as package_type_name
+                FROM bookings b
+                LEFT JOIN packages_master p ON b.package_id = p.id
+                LEFT JOIN package_assets pa ON p.id = pa.package_id
+                LEFT JOIN package_types pt ON p.package_type = pt.id
+                WHERE b.user_id = ? OR (b.customer_phone = ? AND ? != '') OR (b.customer_email = ? AND ? != '')
+                GROUP BY b.id
+                ORDER BY b.id DESC
+            `, [userId, userPhone, userPhone, userEmail, userEmail], (err, rows) => {
+                resolve(rows || []);
+            });
+        });
+
+        // 6. Fetch Holiday / Custom Package Enquiries (matching user_id OR phone OR email)
+        const holidayEnquiries = await new Promise((resolve) => {
+            connection.query(`
+                SELECT * FROM holiday_enquiries
+                WHERE user_id = ? OR (phone = ? AND ? != '') OR (email = ? AND ? != '')
+                ORDER BY id DESC
+            `, [userId, userPhone, userPhone, userEmail, userEmail], (err, rows) => {
+                resolve(rows || []);
+            });
+        });
+
+        // 7. Fetch Corporate Lead Enquiries (matching user_id OR phone OR email)
+        const corporateEnquiries = await new Promise((resolve) => {
+            connection.query(`
+                SELECT * FROM corporate_lead_enquiries
+                WHERE user_id = ? OR (phone = ? AND ? != '') OR (email = ? AND ? != '')
+                ORDER BY id DESC
+            `, [userId, userPhone, userPhone, userEmail, userEmail], (err, rows) => {
+                resolve(rows || []);
+            });
+        });
+
+        // 8. Fetch Wallet Transactions History
+        const walletTransactions = await new Promise((resolve) => {
+            connection.query(`
+                SELECT wt.*, b.invoice_number, b.customer_name as booking_customer_name
+                FROM wallet_transactions wt
+                LEFT JOIN bookings b ON wt.booking_id = b.id
+                WHERE wt.user_id = ?
+                ORDER BY wt.id DESC
+            `, [userId], (err, rows) => {
+                resolve(rows || []);
+            });
+        });
+
+        // 9. Fetch Withdrawal Requests
+        const withdrawalRequests = await new Promise((resolve) => {
+            connection.query(`
+                SELECT * FROM withdrawal_requests
+                WHERE user_id = ?
+                ORDER BY id DESC
+            `, [userId], (err, rows) => {
+                resolve(rows || []);
+            });
+        });
+
+        // 10. Fetch Referred Users Network (Users who signed up with this user's referral code)
+        const referredUsers = await new Promise((resolve) => {
+            connection.query(`
+                SELECT id, first_name, last_name, email, phone, date, status, user_type
+                FROM user_master
+                WHERE referred_by_id = ?
+                ORDER BY id DESC
+            `, [userId], (err, rows) => {
+                resolve(rows || []);
+            });
+        });
+
+        // 11. Fetch Referral Transactions / Commissions
+        const referralTransactions = await new Promise((resolve) => {
+            connection.query(`
+                SELECT rt.*,
+                       ru.first_name as referred_first_name, ru.last_name as referred_last_name,
+                       p.name as package_name
+                FROM referral_transactions rt
+                LEFT JOIN user_master ru ON rt.referred_user_id = ru.id
+                LEFT JOIN packages_master p ON rt.package_id = p.id
+                WHERE rt.referrer_id = ?
+                ORDER BY rt.id DESC
+            `, [userId], (err, rows) => {
+                resolve(rows || []);
+            });
+        });
+
+        // Calculate summary KPIs
+        const totalBookings = bookings.length;
+        const totalSpent = bookings.reduce((sum, b) => sum + (parseFloat(b.total_cost) || 0), 0);
+        const totalSaved = savedPackages.length;
+        const totalEnquiries = holidayEnquiries.length + corporateEnquiries.length;
+        const totalReferrals = referredUsers.length;
+        const totalReferralEarnings = referralTransactions.reduce((sum, r) => sum + (parseFloat(r.commission_amount) || 0), 0);
+        const totalWalletCredits = walletTransactions
+            .filter(w => (w.type || '').toUpperCase() === 'CREDIT')
+            .reduce((sum, w) => sum + (parseFloat(w.amount) || 0), 0);
+        const totalWalletDebits = walletTransactions
+            .filter(w => (w.type || '').toUpperCase() === 'DEBIT')
+            .reduce((sum, w) => sum + (parseFloat(w.amount) || 0), 0);
+
+        return res.status(200).json({
+            status: true,
+            msg: 'User details fetched successfully.',
+            user,
+            addresses,
+            socials,
+            saved_packages: savedPackages,
+            bookings,
+            holiday_enquiries: holidayEnquiries,
+            corporate_enquiries: corporateEnquiries,
+            wallet_transactions: walletTransactions,
+            withdrawal_requests: withdrawalRequests,
+            referred_users: referredUsers,
+            referral_transactions: referralTransactions,
+            stats: {
+                total_bookings: totalBookings,
+                total_spent: totalSpent,
+                total_saved: totalSaved,
+                total_enquiries: totalEnquiries,
+                total_referrals: totalReferrals,
+                total_referral_earnings: totalReferralEarnings,
+                total_wallet_credits: totalWalletCredits,
+                total_wallet_debits: totalWalletDebits
+            }
+        });
     } catch (error) {
-        next(error)
+        next(error);
     }
-})
+});
 
 const getSearchUsers = asyncHandler(async (req, res, next) => {
 
@@ -462,6 +656,182 @@ const getReferralOverview = asyncHandler(async (req, res, next) => {
     }
 });
 
+/**
+ * @desc Release wallet payout / withdraw funds from user wallet (Admin)
+ * @route POST /admin/user/releaseWalletPayout
+ */
+const releaseWalletPayout = asyncHandler(async (req, res, next) => {
+    try {
+        const { user_id, amount, payment_method, transaction_ref, admin_remarks, bank_name, account_number, ifsc_code, upi_id } = req.body;
+
+        if (!user_id) {
+            return res.status(400).json({ status: false, msg: 'User ID is required.' });
+        }
+
+        const payoutAmount = parseFloat(amount);
+        if (isNaN(payoutAmount) || payoutAmount <= 0) {
+            return res.status(400).json({ status: false, msg: 'Please enter a valid payout amount greater than ₹0.' });
+        }
+
+        // 1. Fetch User Record to verify wallet balance
+        const userRows = await new Promise((resolve, reject) => {
+            connection.query('SELECT id, first_name, last_name, wallet_balance, phone, email, bank_name, account_number, ifsc_code, upi_id FROM user_master WHERE id = ?', [user_id], (err, rows) => {
+                if (err) return reject(err);
+                resolve(rows || []);
+            });
+        });
+
+        if (!userRows || userRows.length === 0) {
+            return res.status(404).json({ status: false, msg: 'User not found.' });
+        }
+
+        const user = userRows[0];
+        const currentBalance = parseFloat(user.wallet_balance) || 0;
+
+        if (payoutAmount > currentBalance) {
+            return res.status(400).json({
+                status: false,
+                msg: `Insufficient wallet balance. Available balance is ₹${currentBalance.toLocaleString('en-IN')}, requested payout is ₹${payoutAmount.toLocaleString('en-IN')}.`
+            });
+        }
+
+        const newBalance = currentBalance - payoutAmount;
+
+        // 2. Deduct from user_master
+        await new Promise((resolve, reject) => {
+            connection.query('UPDATE user_master SET wallet_balance = ? WHERE id = ?', [newBalance, user_id], (err, result) => {
+                if (err) return reject(err);
+                resolve(result);
+            });
+        });
+
+        // 3. Record in wallet_transactions as DEBIT
+        const description = `Wallet payout released via ${payment_method || 'Bank Transfer'}${transaction_ref ? ` (Ref: ${transaction_ref})` : ''}${admin_remarks ? ` - Note: ${admin_remarks}` : ''}`;
+        await new Promise((resolve, reject) => {
+            connection.query(`
+                INSERT INTO wallet_transactions (user_id, amount, type, source, description, status, created_at)
+                VALUES (?, ?, 'DEBIT', 'WITHDRAWAL', ?, 'COMPLETED', NOW())
+            `, [user_id, payoutAmount, description], (err, result) => {
+                if (err) return reject(err);
+                resolve(result);
+            });
+        });
+
+        // 4. Record in withdrawal_requests as COMPLETED
+        await new Promise((resolve, reject) => {
+            connection.query(`
+                INSERT INTO withdrawal_requests (user_id, amount, account_holder, bank_name, account_number, ifsc_code, upi_id, status, admin_remarks, transaction_ref, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'COMPLETED', ?, ?, NOW(), NOW())
+            `, [
+                user_id,
+                payoutAmount,
+                `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+                bank_name || user.bank_name || null,
+                account_number || user.account_number || null,
+                ifsc_code || user.ifsc_code || null,
+                upi_id || user.upi_id || null,
+                admin_remarks || 'Wallet payout released by admin',
+                transaction_ref || null
+            ], (err, result) => {
+                if (err) return reject(err);
+                resolve(result);
+            });
+        });
+
+        return res.status(200).json({
+            status: true,
+            msg: `Successfully released ₹${payoutAmount.toLocaleString('en-IN')} payout to ${user.first_name || 'user'}.`,
+            new_wallet_balance: newBalance,
+            payout_amount: payoutAmount,
+            transaction_ref: transaction_ref || null
+        });
+    } catch (error) {
+        console.error('[releaseWalletPayout] error:', error);
+        next(error);
+    }
+});
+
+/**
+ * @desc Process (Approve/Reject) a pending withdrawal request
+ * @route POST /admin/user/processWithdrawalRequest
+ */
+const processWithdrawalRequest = asyncHandler(async (req, res, next) => {
+    try {
+        const { request_id, action, transaction_ref, admin_remarks } = req.body;
+
+        if (!request_id || !action) {
+            return res.status(400).json({ status: false, msg: 'Request ID and action (APPROVE/REJECT) are required.' });
+        }
+
+        const wrRows = await new Promise((resolve, reject) => {
+            connection.query('SELECT * FROM withdrawal_requests WHERE id = ?', [request_id], (err, rows) => {
+                if (err) return reject(err);
+                resolve(rows || []);
+            });
+        });
+
+        if (!wrRows || wrRows.length === 0) {
+            return res.status(404).json({ status: false, msg: 'Withdrawal request not found.' });
+        }
+
+        const wr = wrRows[0];
+        const userId = wr.user_id;
+        const amount = parseFloat(wr.amount);
+
+        if (action.toUpperCase() === 'APPROVE') {
+            // Deduct from wallet
+            await new Promise((resolve, reject) => {
+                connection.query('UPDATE user_master SET wallet_balance = GREATEST(0, wallet_balance - ?) WHERE id = ?', [amount, userId], (err, result) => {
+                    if (err) return reject(err);
+                    resolve(result);
+                });
+            });
+
+            // Insert wallet_transactions debit
+            const desc = `Withdrawal request #${request_id} approved${transaction_ref ? ` (Ref: ${transaction_ref})` : ''}`;
+            await new Promise((resolve, reject) => {
+                connection.query(`
+                    INSERT INTO wallet_transactions (user_id, amount, type, source, description, status, created_at)
+                    VALUES (?, ?, 'DEBIT', 'WITHDRAWAL', ?, 'COMPLETED', NOW())
+                `, [userId, amount, desc], (err, result) => {
+                    if (err) return reject(err);
+                    resolve(result);
+                });
+            });
+
+            // Update withdrawal_requests status
+            await new Promise((resolve, reject) => {
+                connection.query(`
+                    UPDATE withdrawal_requests
+                    SET status = 'COMPLETED', transaction_ref = ?, admin_remarks = ?, updated_at = NOW()
+                    WHERE id = ?
+                `, [transaction_ref || null, admin_remarks || null, request_id], (err, result) => {
+                    if (err) return reject(err);
+                    resolve(result);
+                });
+            });
+
+            return res.status(200).json({ status: true, msg: `Withdrawal request #${request_id} approved and completed.` });
+        } else {
+            // REJECT
+            await new Promise((resolve, reject) => {
+                connection.query(`
+                    UPDATE withdrawal_requests
+                    SET status = 'REJECTED', admin_remarks = ?, updated_at = NOW()
+                    WHERE id = ?
+                `, [admin_remarks || 'Rejected by admin', request_id], (err, result) => {
+                    if (err) return reject(err);
+                    resolve(result);
+                });
+            });
+
+            return res.status(200).json({ status: true, msg: `Withdrawal request #${request_id} rejected.` });
+        }
+    } catch (error) {
+        next(error);
+    }
+});
+
 module.exports = { 
     getAllUser, 
     setUser, 
@@ -474,5 +844,7 @@ module.exports = {
     getSearchUsers, 
     getReferralOverview,
     getParticularAdminUser,
-    updateAdminUser
+    updateAdminUser,
+    releaseWalletPayout,
+    processWithdrawalRequest
 };

@@ -15,7 +15,9 @@ const {
     getSearchUsers, 
     getReferralOverview,
     getParticularAdminUser,
-    updateAdminUser
+    updateAdminUser,
+    releaseWalletPayout,
+    processWithdrawalRequest
 } = require('../../controller/admin/users/adminUserController');
 const { getPermisionMainRoute, createPermision, getPermisions, getParticularPermisions, editPermision, deletePermision } = require('../../controller/admin/users/adminPermisionController');
 
@@ -42,6 +44,8 @@ router.route('/getAllusers').get(adminAuthMiddleWare, getAllCustomerUser);
 router.route('/getParticularUser').get(adminAuthMiddleWare, getParticularUser);
 router.route('/usersStatus').get(adminAuthMiddleWare, userStatus);
 router.route('/getUserSearch').post(adminAuthMiddleWare, getSearchUsers);
+router.route('/releaseWalletPayout').post(adminAuthMiddleWare, releaseWalletPayout);
+router.route('/processWithdrawalRequest').post(adminAuthMiddleWare, processWithdrawalRequest);
 
 
 // Permision 
