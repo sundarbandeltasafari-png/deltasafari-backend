@@ -1,6 +1,8 @@
 const asyncHandler = require('express-async-handler');
 const {
     saveLeadFollowupModel,
+    markLeadConvertedModel,
+    unmarkLeadConvertedModel,
     getFollowupsListModel,
     getFollowupStatsModel,
     getFollowupLogsHistoryModel,
@@ -24,6 +26,8 @@ const saveLeadFollowup = asyncHandler(async (req, res, next) => {
             travel_destination,
             number_of_persons,
             total_rooms,
+            package_name,
+            package_rate,
             extra_note,
             next_followup_date
         } = req.body;
@@ -62,6 +66,8 @@ const saveLeadFollowup = asyncHandler(async (req, res, next) => {
             travel_destination,
             number_of_persons,
             total_rooms,
+            package_name,
+            package_rate,
             extra_note,
             next_followup_date,
             admin_user_id: currentUserId
@@ -70,6 +76,105 @@ const saveLeadFollowup = asyncHandler(async (req, res, next) => {
         return res.status(200).json({
             status: true,
             msg: 'Follow-up saved successfully and audit log updated.',
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * Mark Lead as Converted (Won Deal)
+ * POST /admin/crm/followups/convert
+ */
+const markLeadConverted = asyncHandler(async (req, res, next) => {
+    try {
+        const {
+            contact_id,
+            converted_amount,
+            package_name,
+            conversion_note,
+            travel_date
+        } = req.body;
+
+        if (!contact_id) {
+            return res.status(400).json({ status: false, msg: 'Contact ID is required.' });
+        }
+
+        const isSuperAdmin = req.user?.admin === 1;
+        const currentUserId = req.user?.id;
+
+        // Verify assignment for regular staff admins
+        if (!isSuperAdmin) {
+            const contact = await new Promise((resolve) => {
+                connection.query(`SELECT id, assigned_to FROM whatsapp_contacts WHERE id = ? LIMIT 1`, [contact_id], (err, rows) => {
+                    resolve(rows && rows.length > 0 ? rows[0] : null);
+                });
+            });
+
+            if (!contact) {
+                return res.status(404).json({ status: false, msg: 'Contact not found.' });
+            }
+
+            if (contact.assigned_to !== currentUserId) {
+                return res.status(403).json({ status: false, msg: 'Unauthorized: You can only manage leads assigned to you.' });
+            }
+        }
+
+        const result = await markLeadConvertedModel({
+            contact_id: Number(contact_id),
+            converted_amount,
+            package_name,
+            conversion_note,
+            travel_date,
+            admin_user_id: currentUserId
+        });
+
+        return res.status(200).json({
+            status: true,
+            msg: '🎉 Lead marked as Converted successfully! Follow-up moved to Converted section.',
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * Reopen Lead (Unmark Converted back to active pipeline)
+ * POST /admin/crm/followups/reopen
+ */
+const unmarkLeadConverted = asyncHandler(async (req, res, next) => {
+    try {
+        const { contact_id } = req.body;
+
+        if (!contact_id) {
+            return res.status(400).json({ status: false, msg: 'Contact ID is required.' });
+        }
+
+        const isSuperAdmin = req.user?.admin === 1;
+        const currentUserId = req.user?.id;
+
+        if (!isSuperAdmin) {
+            const contact = await new Promise((resolve) => {
+                connection.query(`SELECT id, assigned_to FROM whatsapp_contacts WHERE id = ? LIMIT 1`, [contact_id], (err, rows) => {
+                    resolve(rows && rows.length > 0 ? rows[0] : null);
+                });
+            });
+
+            if (!contact || contact.assigned_to !== currentUserId) {
+                return res.status(403).json({ status: false, msg: 'Unauthorized to reopen this lead.' });
+            }
+        }
+
+        const result = await unmarkLeadConvertedModel({
+            contact_id: Number(contact_id),
+            admin_user_id: currentUserId
+        });
+
+        return res.status(200).json({
+            status: true,
+            msg: 'Lead re-opened and returned to active follow-up pipeline.',
             data: result
         });
     } catch (error) {
@@ -88,6 +193,7 @@ const getFollowupsList = asyncHandler(async (req, res, next) => {
         const search = req.query.search || '';
         const lead_type = req.query.lead_type || '';
         const is_today_only = req.query.is_today_only === 'true' || req.query.today === 'true';
+        const is_converted = req.query.is_converted || req.query.converted || '';
         const from_date = req.query.from_date || '';
         const to_date = req.query.to_date || '';
         const date_filter_type = req.query.date_filter_type || 'next_followup';
@@ -99,6 +205,7 @@ const getFollowupsList = asyncHandler(async (req, res, next) => {
             search,
             lead_type,
             is_today_only,
+            is_converted,
             from_date,
             to_date,
             date_filter_type,
@@ -196,6 +303,8 @@ const getFollowupLogs = asyncHandler(async (req, res, next) => {
 
 module.exports = {
     saveLeadFollowup,
+    markLeadConverted,
+    unmarkLeadConverted,
     getFollowupsList,
     getFollowupStats,
     getSingleLeadFollowup,

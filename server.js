@@ -1,10 +1,16 @@
 const bodyParser = require('body-parser')
 const express = require('express')
 const cookieParser = require('cookie-parser');
+const http = require('http');
 const app = express()
+const server = http.createServer(app);
 const path = require('path')
 const port = 3002
 const cors = require('cors')
+
+// Initialize Socket.io Server for Real-Time Admin Chat
+const { initSocketServer } = require('./socket/chatSocket');
+initSocketServer(server);
 
 const authRoute = require('./route/authRoute');
 const userRoute = require('./route/userRoute');
@@ -30,17 +36,6 @@ connection.getConnection((err, conn) => {
     conn.release(); // Return connection back to the pool
 });
 
-// var whitelist = ['http://example1.com', 'http://example2.com']
-// var corsOptions = {
-//     origin: function (origin, callback) {
-//         if (whitelist.indexOf(origin) !== -1) {
-//             callback(null, true)
-//         } else {
-//             callback(new Error('Not allowed by CORS'))
-//         }
-//     }
-// }
-
 app.use(cors({
     origin: '*'
 }))
@@ -50,7 +45,6 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Serve files from the "uploads" folder
-// app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const uploadsPath = path.join(__dirname, 'uploads');
 app.use('/uploads', express.static(uploadsPath, {
     fallthrough: true // Allows Express to pass to next route if file is missing on disk
@@ -63,6 +57,12 @@ console.log("Does folder exist?:", fs.existsSync(path.resolve(__dirname, 'upload
 const whatsappWebhookRoute = require('./route/whatsappWebhookRoute');
 const adminWhatsappRoute = require('./route/admin/adminWhatsappRoute');
 const crmFollowupRoute = require('./route/admin/crmFollowupRoute');
+const whatsappMarketingRoute = require('./route/admin/whatsappMarketingRoute');
+const peakDatesRoute = require('./route/admin/peakDatesRoute');
+const invoiceRoute = require('./route/admin/invoiceRoute');
+const taskRoute = require('./route/admin/taskRoute');
+const noticeRoute = require('./route/admin/noticeRoute');
+const chatRoute = require('./route/admin/chatRoute');
 
 // Frontend
 app.get('/', async (req, res) => {
@@ -94,6 +94,18 @@ app.use('/admin/contact-queries', adminContactQueryRoute)
 app.use('/admin/whatsapp', adminWhatsappRoute)
 app.use('/admin/crm/followups', crmFollowupRoute)
 app.use('/admin/whatsapp/followups', crmFollowupRoute)
+app.use('/admin/whatsapp/marketing', whatsappMarketingRoute)
+app.use('/admin/crm/marketing', whatsappMarketingRoute)
+app.use('/admin/crm/peak-dates', peakDatesRoute)
+app.use('/admin/peak-dates', peakDatesRoute)
+app.use('/admin/crm/invoices', invoiceRoute)
+app.use('/admin/invoices', invoiceRoute)
+app.use('/admin/crm/tasks', taskRoute)
+app.use('/admin/tasks', taskRoute)
+app.use('/admin/crm/notices', noticeRoute)
+app.use('/admin/notices', noticeRoute)
+app.use('/admin/crm/chat', chatRoute)
+app.use('/admin/chat', chatRoute)
 
 // 404
 app.use('/{*path}', (req, res) => {
@@ -101,6 +113,6 @@ app.use('/{*path}', (req, res) => {
 });
 app.use(errorHandler)
 
-app.listen(port, () => {
-    console.log(`Example app listening on port ${port}!`)
+server.listen(port, () => {
+    console.log(`Delta Safari Server with Socket.io listening on port ${port}!`)
 })

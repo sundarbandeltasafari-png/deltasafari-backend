@@ -16,6 +16,13 @@ function initCrmFollowupTables() {
             travel_destination VARCHAR(255) NULL,
             number_of_persons INT DEFAULT 1,
             total_rooms INT DEFAULT 1,
+            package_name VARCHAR(255) NULL,
+            package_rate VARCHAR(100) NULL,
+            is_converted TINYINT(1) DEFAULT 0,
+            converted_at DATETIME NULL,
+            converted_by INT NULL,
+            converted_amount VARCHAR(100) NULL,
+            conversion_note TEXT NULL,
             extra_note TEXT NULL,
             next_followup_date DATE NULL,
             last_followup_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -25,6 +32,7 @@ function initCrmFollowupTables() {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             INDEX idx_contact_id (contact_id),
             INDEX idx_lead_type (lead_type),
+            INDEX idx_is_converted (is_converted),
             INDEX idx_next_followup_date (next_followup_date),
             INDEX idx_travel_date (travel_date)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -43,6 +51,8 @@ function initCrmFollowupTables() {
             travel_destination VARCHAR(255) NULL,
             number_of_persons INT DEFAULT 1,
             total_rooms INT DEFAULT 1,
+            package_name VARCHAR(255) NULL,
+            package_rate VARCHAR(100) NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_log_contact (contact_id),
             INDEX idx_log_admin (admin_user_id),
@@ -56,6 +66,26 @@ function initCrmFollowupTables() {
 
     connection.query(createFollowupLogsTable, (err) => {
         if (err) console.error("[CRM Follow-up] Error creating crm_lead_followup_logs table:", err.message);
+    });
+
+    // Run safe migrations for existing tables
+    const migrations = [
+        "ALTER TABLE crm_lead_followups ADD COLUMN package_name VARCHAR(255) NULL AFTER total_rooms",
+        "ALTER TABLE crm_lead_followups ADD COLUMN package_rate VARCHAR(100) NULL AFTER package_name",
+        "ALTER TABLE crm_lead_followups ADD COLUMN is_converted TINYINT(1) DEFAULT 0 AFTER package_rate",
+        "ALTER TABLE crm_lead_followups ADD COLUMN converted_at DATETIME NULL AFTER is_converted",
+        "ALTER TABLE crm_lead_followups ADD COLUMN converted_by INT NULL AFTER converted_at",
+        "ALTER TABLE crm_lead_followups ADD COLUMN converted_amount VARCHAR(100) NULL AFTER converted_by",
+        "ALTER TABLE crm_lead_followups ADD COLUMN conversion_note TEXT NULL AFTER converted_amount",
+        "ALTER TABLE crm_lead_followups ADD INDEX idx_is_converted (is_converted)",
+        "ALTER TABLE crm_lead_followup_logs ADD COLUMN package_name VARCHAR(255) NULL AFTER total_rooms",
+        "ALTER TABLE crm_lead_followup_logs ADD COLUMN package_rate VARCHAR(100) NULL AFTER package_name"
+    ];
+
+    migrations.forEach((migrationSql) => {
+        connection.query(migrationSql, () => {
+            // Silently ignore if column already exists (ER_DUP_FIELDNAME)
+        });
     });
 }
 
@@ -89,6 +119,8 @@ function saveLeadFollowupModel({
     travel_destination = '',
     number_of_persons = 1,
     total_rooms = 1,
+    package_name = '',
+    package_rate = '',
     extra_note = '',
     next_followup_date = null,
     admin_user_id
@@ -152,6 +184,8 @@ function saveLeadFollowupModel({
                         travel_destination = ?,
                         number_of_persons = ?,
                         total_rooms = ?,
+                        package_name = ?,
+                        package_rate = ?,
                         extra_note = ?,
                         next_followup_date = ?,
                         last_followup_at = NOW(),
@@ -168,6 +202,8 @@ function saveLeadFollowupModel({
                         travel_destination ? travel_destination.trim() : '',
                         parsedPersons,
                         parsedRooms,
+                        package_name ? package_name.trim() : '',
+                        package_rate ? package_rate.trim() : '',
                         extra_note ? extra_note.trim() : '',
                         formattedNextFollowupDate,
                         admin_user_id,
@@ -190,12 +226,14 @@ function saveLeadFollowupModel({
                         travel_destination,
                         number_of_persons,
                         total_rooms,
+                        package_name,
+                        package_rate,
                         extra_note,
                         next_followup_date,
                         last_followup_at,
                         last_followup_by,
                         created_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
                 `;
                 const insertResult = await new Promise((res, rej) => {
                     connection.query(insertSql, [
@@ -208,6 +246,8 @@ function saveLeadFollowupModel({
                         travel_destination ? travel_destination.trim() : '',
                         parsedPersons,
                         parsedRooms,
+                        package_name ? package_name.trim() : '',
+                        package_rate ? package_rate.trim() : '',
                         extra_note ? extra_note.trim() : '',
                         formattedNextFollowupDate,
                         admin_user_id,
@@ -233,8 +273,10 @@ function saveLeadFollowupModel({
                     travel_destination,
                     number_of_persons,
                     total_rooms,
+                    package_name,
+                    package_rate,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
             `;
             await new Promise((res, rej) => {
                 connection.query(insertLogSql, [
@@ -247,7 +289,9 @@ function saveLeadFollowupModel({
                     formattedTravelDate,
                     travel_destination ? travel_destination.trim() : '',
                     parsedPersons,
-                    parsedRooms
+                    parsedRooms,
+                    package_name ? package_name.trim() : '',
+                    package_rate ? package_rate.trim() : ''
                 ], (err, result) => {
                     if (err) return rej(err);
                     res(result);
@@ -273,6 +317,218 @@ function saveLeadFollowupModel({
 }
 
 /**
+ * Mark Lead as Converted (Won Deal) and log to audit timeline
+ */
+function markLeadConvertedModel({
+    contact_id,
+    converted_amount = '',
+    package_name = '',
+    conversion_note = '',
+    travel_date = null,
+    admin_user_id
+}) {
+    return new Promise(async (resolve, reject) => {
+        if (!contact_id) return reject(new Error("Contact ID is required."));
+        if (!admin_user_id) return reject(new Error("Admin User ID is required."));
+
+        const formattedTravelDate = formatDateForDb(travel_date);
+
+        try {
+            // 1. Check if followup exists
+            const existingFollowupRows = await new Promise((res, rej) => {
+                connection.query(`SELECT id, lead_name, phone, package_name, package_rate, travel_destination, number_of_persons, total_rooms FROM crm_lead_followups WHERE contact_id = ? LIMIT 1`, [contact_id], (err, rows) => {
+                    if (err) return rej(err);
+                    res(rows || []);
+                });
+            });
+
+            let followupId = null;
+            let currentFollowup = null;
+
+            if (existingFollowupRows.length > 0) {
+                currentFollowup = existingFollowupRows[0];
+                followupId = currentFollowup.id;
+
+                const updateSql = `
+                    UPDATE crm_lead_followups
+                    SET 
+                        is_converted = 1,
+                        converted_at = NOW(),
+                        converted_by = ?,
+                        converted_amount = ?,
+                        package_name = COALESCE(NULLIF(?, ''), package_name),
+                        package_rate = COALESCE(NULLIF(?, ''), package_rate),
+                        conversion_note = ?,
+                        travel_date = COALESCE(?, travel_date),
+                        last_followup_at = NOW(),
+                        last_followup_by = ?
+                    WHERE id = ?
+                `;
+
+                await new Promise((res, rej) => {
+                    connection.query(updateSql, [
+                        admin_user_id,
+                        converted_amount ? String(converted_amount).trim() : (currentFollowup.package_rate || ''),
+                        package_name ? package_name.trim() : '',
+                        converted_amount ? String(converted_amount).trim() : '',
+                        conversion_note ? conversion_note.trim() : '',
+                        formattedTravelDate,
+                        admin_user_id,
+                        followupId
+                    ], (err, result) => {
+                        if (err) return rej(err);
+                        res(result);
+                    });
+                });
+            } else {
+                // If follow-up didn't exist yet, fetch contact details and create converted record
+                const contactRows = await new Promise((res, rej) => {
+                    connection.query(`SELECT id, wa_id, name FROM whatsapp_contacts WHERE id = ? LIMIT 1`, [contact_id], (err, rows) => {
+                        if (err) return rej(err);
+                        res(rows || []);
+                    });
+                });
+
+                if (contactRows.length === 0) {
+                    return reject(new Error("Contact not found."));
+                }
+
+                const contact = contactRows[0];
+                const insertSql = `
+                    INSERT INTO crm_lead_followups (
+                        contact_id,
+                        lead_name,
+                        phone,
+                        is_converted,
+                        converted_at,
+                        converted_by,
+                        converted_amount,
+                        package_name,
+                        package_rate,
+                        conversion_note,
+                        travel_date,
+                        last_followup_at,
+                        last_followup_by,
+                        created_by
+                    ) VALUES (?, ?, ?, 1, NOW(), ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
+                `;
+
+                const insertRes = await new Promise((res, rej) => {
+                    connection.query(insertSql, [
+                        contact_id,
+                        contact.name || `Lead ${contact.wa_id}`,
+                        contact.wa_id,
+                        admin_user_id,
+                        converted_amount ? String(converted_amount).trim() : '',
+                        package_name ? package_name.trim() : '',
+                        converted_amount ? String(converted_amount).trim() : '',
+                        conversion_note ? conversion_note.trim() : '',
+                        formattedTravelDate,
+                        admin_user_id,
+                        admin_user_id
+                    ], (err, result) => {
+                        if (err) return rej(err);
+                        res(result);
+                    });
+                });
+                followupId = insertRes.insertId;
+            }
+
+            // 2. Audit Timeline Log
+            const logNote = `🎉 LEAD CONVERTED / WON DEAL! Agreed Amount: ₹${converted_amount || 'N/A'}. Package: ${package_name || currentFollowup?.package_name || 'Standard'}. Note: ${conversion_note || 'Successfully converted lead.'}`;
+
+            const insertLogSql = `
+                INSERT INTO crm_lead_followup_logs (
+                    followup_id,
+                    contact_id,
+                    admin_user_id,
+                    lead_type,
+                    note,
+                    package_name,
+                    package_rate,
+                    travel_date,
+                    travel_destination,
+                    number_of_persons,
+                    total_rooms,
+                    created_at
+                ) VALUES (?, ?, ?, 'converted', ?, ?, ?, ?, ?, ?, ?, NOW())
+            `;
+
+            await new Promise((res, rej) => {
+                connection.query(insertLogSql, [
+                    followupId,
+                    contact_id,
+                    admin_user_id,
+                    logNote,
+                    package_name || currentFollowup?.package_name || '',
+                    converted_amount || currentFollowup?.package_rate || '',
+                    formattedTravelDate || currentFollowup?.travel_date || null,
+                    currentFollowup?.travel_destination || 'Sundarban',
+                    currentFollowup?.number_of_persons || 1,
+                    currentFollowup?.total_rooms || 1
+                ], (err, result) => {
+                    if (err) return rej(err);
+                    res(result);
+                });
+            });
+
+            resolve({
+                success: true,
+                contact_id,
+                followup_id: followupId,
+                is_converted: 1
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+/**
+ * Reopen / Unconvert Lead back to Active Pipeline
+ */
+function unmarkLeadConvertedModel({
+    contact_id,
+    admin_user_id
+}) {
+    return new Promise(async (resolve, reject) => {
+        if (!contact_id) return reject(new Error("Contact ID is required."));
+        if (!admin_user_id) return reject(new Error("Admin User ID is required."));
+
+        try {
+            await new Promise((res, rej) => {
+                connection.query(`UPDATE crm_lead_followups SET is_converted = 0, last_followup_at = NOW(), last_followup_by = ? WHERE contact_id = ?`, [admin_user_id, contact_id], (err, result) => {
+                    if (err) return rej(err);
+                    res(result);
+                });
+            });
+
+            // Insert audit log
+            const insertLogSql = `
+                INSERT INTO crm_lead_followup_logs (
+                    contact_id,
+                    admin_user_id,
+                    lead_type,
+                    note,
+                    created_at
+                ) VALUES (?, ?, 'warm', 'Lead re-opened from Converted status to Active Follow-up.', NOW())
+            `;
+            await new Promise((res) => {
+                connection.query(insertLogSql, [contact_id, admin_user_id], () => res());
+            });
+
+            resolve({
+                success: true,
+                contact_id,
+                is_converted: 0
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+/**
  * Get Paginated List of Lead Follow-ups with advanced filtering
  */
 function getFollowupsListModel({
@@ -281,9 +537,10 @@ function getFollowupsListModel({
     search = '',
     lead_type = '',
     is_today_only = false,
+    is_converted = 'false',
     from_date = '',
     to_date = '',
-    date_filter_type = 'next_followup', // 'next_followup' or 'travel_date' or 'last_followup'
+    date_filter_type = 'next_followup', // 'next_followup' or 'travel_date' or 'last_followup' or 'converted_at'
     assigned_to = '',
     requestingUser = null
 } = {}) {
@@ -307,21 +564,31 @@ function getFollowupsListModel({
             }
         }
 
-        // 2. Lead Type filter (hot, warm, cold)
+        // 2. Converted vs Active Leads Filter
+        const isConvertedFilter = is_converted === 'true' || is_converted === true || is_converted === '1' || lead_type === 'converted';
+        if (isConvertedFilter) {
+            conditions.push(`f.is_converted = 1`);
+        } else {
+            // Default: STRICTLY ONLY active follow-ups (converted leads are excluded)
+            conditions.push(`(f.is_converted = 0 OR f.is_converted IS NULL)`);
+        }
+
+        // 3. Lead Type filter (hot, warm, cold)
         if (lead_type && ['hot', 'warm', 'cold'].includes(String(lead_type).toLowerCase())) {
             conditions.push(`f.lead_type = ?`);
             params.push(String(lead_type).toLowerCase());
         }
 
-        // 3. Quick Today Filter
+        // 4. Quick Today Filter
         if (String(is_today_only) === 'true' || is_today_only === true) {
             conditions.push(`f.next_followup_date = CURDATE()`);
         }
 
-        // 4. Date range filter (from_date to to_date)
+        // 5. Date range filter (from_date to to_date)
         const targetDateField = date_filter_type === 'travel_date' 
             ? 'f.travel_date' 
-            : (date_filter_type === 'last_followup' ? 'DATE(f.last_followup_at)' : 'f.next_followup_date');
+            : (date_filter_type === 'last_followup' ? 'DATE(f.last_followup_at)' 
+            : (date_filter_type === 'converted_at' ? 'DATE(f.converted_at)' : 'f.next_followup_date'));
 
         if (from_date && to_date) {
             const formattedFrom = formatDateForDb(from_date);
@@ -344,7 +611,7 @@ function getFollowupsListModel({
             }
         }
 
-        // 5. Search filter (Lead Name, Phone, Destination, Notes)
+        // 6. Search filter (Lead Name, Phone, Destination, Package Name, Notes)
         if (search && search.trim() !== '') {
             const term = `%${search.trim()}%`;
             conditions.push(`(
@@ -353,9 +620,11 @@ function getFollowupsListModel({
                 OR f.phone LIKE ? 
                 OR c.wa_id LIKE ? 
                 OR f.travel_destination LIKE ? 
+                OR f.package_name LIKE ?
+                OR f.conversion_note LIKE ?
                 OR f.extra_note LIKE ?
             )`);
-            params.push(term, term, term, term, term, term);
+            params.push(term, term, term, term, term, term, term, term);
         }
 
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -372,6 +641,13 @@ function getFollowupsListModel({
                 f.travel_destination,
                 f.number_of_persons,
                 f.total_rooms,
+                f.package_name,
+                f.package_rate,
+                f.is_converted,
+                f.converted_at,
+                f.converted_by,
+                f.converted_amount,
+                f.conversion_note,
                 f.extra_note,
                 f.next_followup_date,
                 f.last_followup_at,
@@ -383,6 +659,7 @@ function getFollowupsListModel({
                 CONCAT(u.first_name, ' ', COALESCE(u.last_name, '')) AS assigned_user_name,
                 u.email AS assigned_user_email,
                 CONCAT(ub.first_name, ' ', COALESCE(ub.last_name, '')) AS last_followup_by_name,
+                CONCAT(uc.first_name, ' ', COALESCE(uc.last_name, '')) AS converted_by_name,
                 (
                     SELECT COUNT(l.id) 
                     FROM crm_lead_followup_logs l 
@@ -406,16 +683,17 @@ function getFollowupsListModel({
             JOIN whatsapp_contacts c ON c.id = f.contact_id
             LEFT JOIN user_master u ON u.id = c.assigned_to
             LEFT JOIN user_master ub ON ub.id = f.last_followup_by
+            LEFT JOIN user_master uc ON uc.id = f.converted_by
             ${whereClause}
             ORDER BY 
-                CASE 
+                ${isConvertedFilter ? 'f.converted_at DESC, f.last_followup_at DESC' : `CASE 
                     WHEN f.next_followup_date = CURDATE() THEN 1
                     WHEN f.next_followup_date < CURDATE() THEN 2
                     WHEN f.next_followup_date > CURDATE() THEN 3
                     ELSE 4
                 END ASC,
                 f.next_followup_date ASC,
-                f.last_followup_at DESC
+                f.last_followup_at DESC`}
             LIMIT ? OFFSET ?
         `;
 
@@ -467,13 +745,14 @@ function getFollowupStatsModel(requestingUser = null) {
 
         const sql = `
             SELECT 
-                COUNT(f.id) AS total_followups,
-                SUM(CASE WHEN f.next_followup_date = CURDATE() THEN 1 ELSE 0 END) AS today_followups,
-                SUM(CASE WHEN f.next_followup_date < CURDATE() AND f.next_followup_date IS NOT NULL THEN 1 ELSE 0 END) AS overdue_followups,
-                SUM(CASE WHEN f.next_followup_date > CURDATE() THEN 1 ELSE 0 END) AS upcoming_followups,
-                SUM(CASE WHEN f.lead_type = 'hot' THEN 1 ELSE 0 END) AS hot_leads,
-                SUM(CASE WHEN f.lead_type = 'warm' THEN 1 ELSE 0 END) AS warm_leads,
-                SUM(CASE WHEN f.lead_type = 'cold' THEN 1 ELSE 0 END) AS cold_leads
+                SUM(CASE WHEN (f.is_converted = 0 OR f.is_converted IS NULL) THEN 1 ELSE 0 END) AS total_followups,
+                SUM(CASE WHEN (f.is_converted = 0 OR f.is_converted IS NULL) AND f.next_followup_date = CURDATE() THEN 1 ELSE 0 END) AS today_followups,
+                SUM(CASE WHEN (f.is_converted = 0 OR f.is_converted IS NULL) AND f.next_followup_date < CURDATE() AND f.next_followup_date IS NOT NULL THEN 1 ELSE 0 END) AS overdue_followups,
+                SUM(CASE WHEN (f.is_converted = 0 OR f.is_converted IS NULL) AND f.next_followup_date > CURDATE() THEN 1 ELSE 0 END) AS upcoming_followups,
+                SUM(CASE WHEN (f.is_converted = 0 OR f.is_converted IS NULL) AND f.lead_type = 'hot' THEN 1 ELSE 0 END) AS hot_leads,
+                SUM(CASE WHEN (f.is_converted = 0 OR f.is_converted IS NULL) AND f.lead_type = 'warm' THEN 1 ELSE 0 END) AS warm_leads,
+                SUM(CASE WHEN (f.is_converted = 0 OR f.is_converted IS NULL) AND f.lead_type = 'cold' THEN 1 ELSE 0 END) AS cold_leads,
+                SUM(CASE WHEN f.is_converted = 1 THEN 1 ELSE 0 END) AS converted_leads
             FROM crm_lead_followups f
             JOIN whatsapp_contacts c ON c.id = f.contact_id
             ${whereClause}
@@ -489,7 +768,8 @@ function getFollowupStatsModel(requestingUser = null) {
                 upcoming_followups: Number(stats.upcoming_followups || 0),
                 hot_leads: Number(stats.hot_leads || 0),
                 warm_leads: Number(stats.warm_leads || 0),
-                cold_leads: Number(stats.cold_leads || 0)
+                cold_leads: Number(stats.cold_leads || 0),
+                converted_leads: Number(stats.converted_leads || 0)
             });
         });
     });
@@ -534,6 +814,8 @@ function getFollowupLogsHistoryModel(contactId, requestingUser = null) {
                 l.travel_destination,
                 l.number_of_persons,
                 l.total_rooms,
+                l.package_name,
+                l.package_rate,
                 l.created_at,
                 CONCAT(u.first_name, ' ', COALESCE(u.last_name, '')) AS admin_name,
                 u.email AS admin_email
@@ -621,6 +903,8 @@ function getSingleLeadFollowupModel(contactId, requestingUser = null) {
 module.exports = {
     initCrmFollowupTables,
     saveLeadFollowupModel,
+    markLeadConvertedModel,
+    unmarkLeadConvertedModel,
     getFollowupsListModel,
     getFollowupStatsModel,
     getFollowupLogsHistoryModel,
