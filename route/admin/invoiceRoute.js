@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { superAdminAuthMiddleWare } = require('../../middleware/middleware');
+const { adminAuthMiddleWare, superAdminAuthMiddleWare } = require('../../middleware/middleware');
 const {
     getInvoiceConfig,
     updateInvoiceConfig,
@@ -12,13 +12,16 @@ const {
     getBillingStats
 } = require('../../controller/admin/invoiceController');
 
-router.get('/config', superAdminAuthMiddleWare, getInvoiceConfig);
+// Configuration: All admin users can view config (needed for invoice generation/preview), but only Super Admin can update
+router.get('/config', adminAuthMiddleWare, getInvoiceConfig);
 router.post('/config', superAdminAuthMiddleWare, updateInvoiceConfig);
-router.get('/next-number', superAdminAuthMiddleWare, getNextInvoiceNumber);
-router.get('/stats', superAdminAuthMiddleWare, getBillingStats);
-router.get('/', superAdminAuthMiddleWare, getInvoicesList);
-router.post('/', superAdminAuthMiddleWare, createInvoice);
-router.get('/:id', superAdminAuthMiddleWare, getInvoiceDetails);
+
+// Invoices & Billing: Accessible to all admin users
+router.get('/next-number', adminAuthMiddleWare, getNextInvoiceNumber);
+router.get('/stats', adminAuthMiddleWare, getBillingStats);
+router.get('/', adminAuthMiddleWare, getInvoicesList);
+router.post('/', adminAuthMiddleWare, createInvoice);
+router.get('/:id', adminAuthMiddleWare, getInvoiceDetails);
 router.delete('/:id', superAdminAuthMiddleWare, deleteInvoice);
 
 module.exports = router;
