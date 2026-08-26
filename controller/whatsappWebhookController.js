@@ -58,17 +58,20 @@ const handleWebhook = async (req, res) => {
                 // 1. Upsert contact (finds or creates, and auto-assigns to admin user if new)
                 const contactRecord = await upsertWhatsAppContact(contact.wa_id, contact.name);
 
-                // 2. Save incoming message in database
-                const savedMessage = await saveWhatsAppIncomingMessage({
-                    contactId: contactRecord.id,
-                    messageId: message.message_id,
-                    messageText: message.text,
-                    mediaUrl: message.media_url,
-                    mediaType: message.media_type,
-                    timestamp: message.timestamp
-                });
+                let savedMessage = null;
+                // 2. Save incoming message in database if message data is present
+                if (message && (message.text !== undefined || message.media_url || message.message_id)) {
+                    savedMessage = await saveWhatsAppIncomingMessage({
+                        contactId: contactRecord.id,
+                        messageId: message.message_id,
+                        messageText: message.text,
+                        mediaUrl: message.media_url,
+                        mediaType: message.media_type,
+                        timestamp: message.timestamp
+                    });
+                }
 
-                console.log(`[WhatsApp Webhook Processed]: Contact: "${contactRecord.name}" (${contactRecord.wa_id}), Message: "${message.text}"`);
+                console.log(`[WhatsApp Webhook Processed]: Contact: "${contactRecord.name}" (${contactRecord.wa_id})${savedMessage ? `, Message: "${savedMessage.message_text || savedMessage.id}"` : ' (Contact only)'}`);
 
                 // 3. Real-time broadcast to connected admin clients via Socket.io
                 if (io) {

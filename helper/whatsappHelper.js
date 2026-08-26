@@ -187,49 +187,78 @@ const processValueObject = (value, results) => {
     if (!value || typeof value !== 'object') return;
 
     const contactsMap = {};
+    const contactsList = [];
     if (Array.isArray(value.contacts)) {
         for (const c of value.contacts) {
-            if (c.wa_id) {
-                contactsMap[c.wa_id] = c.profile?.name || c.wa_id;
+            const rawWaId = c.wa_id || c.phone || c.id || c.user_id;
+            if (rawWaId) {
+                const waId = String(rawWaId).trim();
+                const name = c.profile?.name || c.name || waId;
+                contactsMap[waId] = name;
+                contactsList.push({ wa_id: waId, name });
             }
         }
     }
 
+    const processedContactIds = new Set();
+
     // Format 1: WhatsApp Cloud API messages array (Standard and Direct { field: 'messages', value: { contacts: [...], messages: [...] } })
-    if (Array.isArray(value.messages)) {
+    if (Array.isArray(value.messages) && value.messages.length > 0) {
         for (const msg of value.messages) {
-            const fromWaId = msg.from;
+            const fromWaId = msg.from || msg.sender || (msg.from_user_id ? String(msg.from_user_id) : null);
             if (!fromWaId) continue;
-            const contactName = contactsMap[fromWaId] || `Lead ${fromWaId}`;
+            const cleanFromWaId = String(fromWaId).trim();
+            const contactName = contactsMap[cleanFromWaId] || contactsMap[fromWaId] || `Lead ${cleanFromWaId}`;
+            processedContactIds.add(cleanFromWaId);
+
             const event = buildNormalizedEvent({
-                senderId: fromWaId,
+                senderId: cleanFromWaId,
                 senderName: contactName,
-                messageId: msg.id,
+                messageId: msg.id || msg.mid,
                 timestamp: msg.timestamp || value.timestamp,
                 messageObj: msg
             });
             if (event) results.push(event);
         }
-        return;
     }
 
     // Format 2: Sample / Test Webhook or single sender & message object
     // e.g. { sender: { id: '12334' }, recipient: { id: '23245' }, timestamp: '...', message: { mid: '...', text: '...' } }
-    if (value.sender || value.message || value.from) {
+    if (value.sender || value.message || (value.from && (!Array.isArray(value.messages) || value.messages.length === 0))) {
         const senderId = value.sender?.id || value.from || value.sender;
-        const senderName = value.sender?.name || (senderId ? contactsMap[senderId] : null);
-        const msgObj = value.message || value;
-        const msgId = msgObj.mid || msgObj.id || msgObj.message_id || value.mid;
-        const timestamp = value.timestamp || msgObj.timestamp;
+        if (senderId) {
+            const cleanSenderId = String(senderId).trim();
+            const senderName = value.sender?.name || contactsMap[cleanSenderId] || contactsMap[senderId] || `Lead ${cleanSenderId}`;
+            processedContactIds.add(cleanSenderId);
 
-        const event = buildNormalizedEvent({
-            senderId,
-            senderName,
-            messageId: msgId,
-            timestamp,
-            messageObj: msgObj
-        });
-        if (event) results.push(event);
+            const msgObj = value.message || value;
+            const msgId = msgObj.mid || msgObj.id || msgObj.message_id || value.mid;
+            const timestamp = value.timestamp || msgObj.timestamp;
+
+            const event = buildNormalizedEvent({
+                senderId: cleanSenderId,
+                senderName,
+                messageId: msgId,
+                timestamp,
+                messageObj: msgObj
+            });
+            if (event) results.push(event);
+        }
+    }
+
+    // Format 3: Standalone Contacts without messages (or extra contacts not in messages array)
+    // Ensures new contacts are ALWAYS inserted into the database even if no message is present
+    for (const c of contactsList) {
+        if (!processedContactIds.has(c.wa_id)) {
+            results.push({
+                contact: {
+                    wa_id: c.wa_id,
+                    name: c.name
+                },
+                message: null
+            });
+            processedContactIds.add(c.wa_id);
+        }
     }
 };
 
@@ -241,9 +270,10 @@ const processValueObject = (value, results) => {
  * 3. Standard WhatsApp Business Cloud API Payloads ({ object: "whatsapp_business_account", entry: [ { changes: [...] } ] })
  * 4. Meta Messenger / Instagram Page Webhooks ({ object: "page", entry: [ { messaging: [...] } ] })
  * 5. Direct message payload ({ sender, message } or { from, text })
+ * 6. Contact-only payload ({ contacts: [...] })
  * 
  * @param {object} body - Webhook Body
- * @returns {Array<{contact: {wa_id: string, name: string}, message: {message_id: string, from: string, timestamp: string, type: string, text: string, media_url: string|null, media_type: string}}>}
+ * @returns {Array<{contact: {wa_id: string, name: string}, message: {message_id: string, from: string, timestamp: string, type: string, text: string, media_url: string|null, media_type: string}|null}>}
  */
 const extractWhatsAppWebhookEvents = (body) => {
     const results = [];
@@ -252,7 +282,7 @@ const extractWhatsAppWebhookEvents = (body) => {
     }
 
     // 1. Direct root-level { field: "messages", value: { ... } } (Meta test event or direct webhook)
-    if ((body.field === 'messages' || body.field === 'message') && body.value) {
+    if ((body.field === 'messages' || body.field === 'message' || body.field === 'contacts') && body.value) {
         processValueObject(body.value, results);
         if (results.length > 0) return results;
     }
@@ -296,13 +326,13 @@ const extractWhatsAppWebhookEvents = (body) => {
         if (results.length > 0) return results;
     }
 
-    // 4. Direct payload with value property or direct sender/message/from/messages
+    // 4. Direct payload with value property or direct sender/message/from/messages/contacts
     if (body.value) {
         processValueObject(body.value, results);
         if (results.length > 0) return results;
     }
 
-    if (body.sender || body.from || body.message || body.messages) {
+    if (body.sender || body.from || body.message || body.messages || body.contacts) {
         processValueObject(body, results);
     }
 

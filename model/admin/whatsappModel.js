@@ -59,18 +59,21 @@ function upsertWhatsAppContact(waId, name) {
     return new Promise((resolve, reject) => {
         if (!waId) return reject(new Error("WhatsApp ID (wa_id) is required."));
 
+        const cleanWaId = String(waId).replace(/[^0-9]/g, '').trim() || String(waId).trim();
+        const contactName = (name && String(name).trim() && String(name).trim() !== cleanWaId) ? String(name).trim() : `Lead ${cleanWaId}`;
+
         const selectSql = `SELECT id, wa_id, name, assigned_to FROM whatsapp_contacts WHERE wa_id = ? LIMIT 1`;
-        connection.query(selectSql, [waId], (err, rows) => {
+        connection.query(selectSql, [cleanWaId], (err, rows) => {
             if (err) return reject(err);
 
             if (rows && rows.length > 0) {
                 const contact = rows[0];
-                // Update name if currently empty or newly provided
-                if (name && name !== contact.name && name !== waId) {
+                // Update name if currently empty or newly provided with real name
+                if (contactName && contactName !== contact.name && contactName !== cleanWaId) {
                     const updateSql = `UPDATE whatsapp_contacts SET name = ?, updated_at = NOW() WHERE id = ?`;
-                    connection.query(updateSql, [name, contact.id], (uErr) => {
+                    connection.query(updateSql, [contactName, contact.id], (uErr) => {
                         if (uErr) console.error("Error updating contact name:", uErr);
-                        resolve({ id: contact.id, wa_id: contact.wa_id, name: name || contact.name, is_new: false, assigned_to: contact.assigned_to });
+                        resolve({ id: contact.id, wa_id: contact.wa_id, name: contactName || contact.name, is_new: false, assigned_to: contact.assigned_to });
                     });
                 } else {
                     const touchSql = `UPDATE whatsapp_contacts SET updated_at = NOW() WHERE id = ?`;
@@ -79,11 +82,11 @@ function upsertWhatsAppContact(waId, name) {
                 }
             } else {
                 const insertSql = `INSERT INTO whatsapp_contacts (wa_id, name, created_at, updated_at) VALUES (?, ?, NOW(), NOW())`;
-                connection.query(insertSql, [waId, name || waId], async (iErr, result) => {
+                connection.query(insertSql, [cleanWaId, contactName], async (iErr, result) => {
                     if (iErr) return reject(iErr);
                     const newContactId = result.insertId;
                     const assignedUserId = await autoAssignLeadToAdmin(newContactId);
-                    resolve({ id: newContactId, wa_id: waId, name: name || waId, is_new: true, assigned_to: assignedUserId });
+                    resolve({ id: newContactId, wa_id: cleanWaId, name: contactName, is_new: true, assigned_to: assignedUserId });
                 });
             }
         });
