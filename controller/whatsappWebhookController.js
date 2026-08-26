@@ -1,5 +1,6 @@
 const { extractWhatsAppWebhookEvents } = require('../helper/whatsappHelper');
 const { upsertWhatsAppContact, saveWhatsAppIncomingMessage } = require('../model/admin/whatsappModel');
+const { getIO } = require('../socket/chatSocket');
 
 /**
  * GET Handler: Verify Meta Webhook Challenge
@@ -35,28 +36,30 @@ const verifyWebhook = (req, res) => {
 const handleWebhook = async (req, res) => {
     try {
         const body = req.body;
+        console.log('[WhatsApp Webhook Inbound Payload]:', JSON.stringify(body));
 
-        // Meta requires an immediate HTTP 200 response to avoid resending webhooks
-        res.status(200).send('EVENT_RECEIVED');
-
-        // Extract normalized events
+        // Extract normalized events from any supported Meta / WhatsApp / Messenger payload format
         const events = extractWhatsAppWebhookEvents(body);
 
         if (!events || events.length === 0) {
-            return;
+            console.log('[WhatsApp Webhook]: No message events extracted from payload');
+            return res.status(200).send('EVENT_RECEIVED');
         }
 
-        console.log(`[WhatsApp Webhook]: Received ${events.length} message event(s)`);
+        console.log(`[WhatsApp Webhook]: Received ${events.length} message event(s) to process`);
+
+        const io = getIO();
 
         for (const item of events) {
             try {
                 const { contact, message } = item;
+                if (!contact || !contact.wa_id) continue;
 
-                // 1. Upsert contact
+                // 1. Upsert contact (finds or creates, and auto-assigns to admin user if new)
                 const contactRecord = await upsertWhatsAppContact(contact.wa_id, contact.name);
 
-                // 2. Save incoming message
-                await saveWhatsAppIncomingMessage({
+                // 2. Save incoming message in database
+                const savedMessage = await saveWhatsAppIncomingMessage({
                     contactId: contactRecord.id,
                     messageId: message.message_id,
                     messageText: message.text,
@@ -65,14 +68,24 @@ const handleWebhook = async (req, res) => {
                     timestamp: message.timestamp
                 });
 
-                console.log(`[WhatsApp Webhook Processed]: Contact: ${contactRecord.name} (${contactRecord.wa_id}), Message: "${message.text}"`);
+                console.log(`[WhatsApp Webhook Processed]: Contact: "${contactRecord.name}" (${contactRecord.wa_id}), Message: "${message.text}"`);
+
+                // 3. Real-time broadcast to connected admin clients via Socket.io
+                if (io) {
+                    io.emit('whatsapp_message_received', {
+                        contact: contactRecord,
+                        message: savedMessage
+                    });
+                }
             } catch (eventErr) {
                 console.error('[WhatsApp Webhook Event Processing Error]:', eventErr);
             }
         }
+
+        return res.status(200).send('EVENT_RECEIVED');
     } catch (error) {
         console.error('[WhatsApp Webhook POST Error]:', error);
-        // Note: res.status(200) was already sent
+        return res.status(200).send('EVENT_RECEIVED');
     }
 };
 

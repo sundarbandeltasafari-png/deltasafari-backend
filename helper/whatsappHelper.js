@@ -85,84 +85,225 @@ const sendWhatsAppCloudMessage = async (toPhoneNumber, textMessage) => {
 };
 
 /**
+ * Helper to extract text and media details from message object
+ * @param {object|string} msg 
+ * @returns {{text: string, mediaUrl: string|null, mediaType: string}}
+ */
+const extractMessageContent = (msg) => {
+    if (!msg) return { text: '', mediaUrl: null, mediaType: 'text' };
+    
+    if (typeof msg === 'string') {
+        return { text: msg, mediaUrl: null, mediaType: 'text' };
+    }
+
+    let text = '';
+    let mediaUrl = null;
+    let mediaType = msg.type || 'text';
+
+    if (typeof msg.text === 'string') {
+        text = msg.text;
+    } else if (msg.text?.body) {
+        text = msg.text.body;
+    } else if (msg.body) {
+        text = msg.body;
+    } else if (msg.type === 'image' || msg.image) {
+        mediaType = 'image';
+        text = msg.image?.caption || msg.caption || '[Image received]';
+        mediaUrl = msg.image?.id || msg.image?.url || msg.image?.link || null;
+    } else if (msg.type === 'document' || msg.document) {
+        mediaType = 'document';
+        text = msg.document?.caption || `[Document: ${msg.document?.filename || 'File'}]`;
+        mediaUrl = msg.document?.id || msg.document?.url || msg.document?.link || null;
+    } else if (msg.type === 'audio' || msg.audio) {
+        mediaType = 'audio';
+        text = '[Voice note / Audio message]';
+        mediaUrl = msg.audio?.id || msg.audio?.url || null;
+    } else if (msg.type === 'video' || msg.video) {
+        mediaType = 'video';
+        text = msg.video?.caption || '[Video message]';
+        mediaUrl = msg.video?.id || msg.video?.url || null;
+    } else if (msg.type === 'location' || msg.location) {
+        mediaType = 'location';
+        text = `[Location: Lat ${msg.location?.latitude}, Long ${msg.location?.longitude}]`;
+    } else if (msg.type === 'button' || msg.button) {
+        mediaType = 'button';
+        text = msg.button?.text || msg.button?.payload || '[Button click]';
+    } else if (msg.type === 'interactive' || msg.interactive) {
+        mediaType = msg.interactive?.type || 'interactive';
+        text = msg.interactive?.button_reply?.title || msg.interactive?.list_reply?.title || '[Interactive reply]';
+    } else if (Array.isArray(msg.attachments) && msg.attachments.length > 0) {
+        const att = msg.attachments[0];
+        mediaType = att.type || 'file';
+        mediaUrl = att.payload?.url || null;
+        text = msg.text || `[${mediaType} attachment]`;
+    } else if (msg.type) {
+        text = `[${msg.type} message]`;
+    }
+
+    if (msg.commands && Array.isArray(msg.commands) && msg.commands.length > 0) {
+        const cmdList = msg.commands.map(c => typeof c === 'object' ? c.name : c).filter(Boolean);
+        if (cmdList.length > 0) {
+            text = text ? `${text} (Commands: ${cmdList.join(', ')})` : `Commands: ${cmdList.join(', ')}`;
+        }
+    }
+
+    return { text: text || '', mediaUrl, mediaType };
+};
+
+/**
+ * Normalizes a single message event into standard CRM format
+ */
+const buildNormalizedEvent = ({ senderId, senderName, messageId, timestamp, messageObj, defaultMediaType, defaultMediaUrl }) => {
+    if (!senderId) return null;
+    const cleanSenderId = String(senderId).trim();
+    if (!cleanSenderId) return null;
+
+    const content = extractMessageContent(messageObj);
+    const msgId = messageId || (typeof messageObj === 'object' ? (messageObj.mid || messageObj.id || messageObj.message_id) : null) || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const ts = timestamp ? String(timestamp) : String(Math.floor(Date.now() / 1000));
+    const name = senderName || `Lead ${cleanSenderId}`;
+
+    return {
+        contact: {
+            wa_id: cleanSenderId,
+            name: name
+        },
+        message: {
+            message_id: msgId,
+            from: cleanSenderId,
+            timestamp: ts,
+            type: content.mediaType || defaultMediaType || 'text',
+            text: content.text,
+            media_url: content.mediaUrl || defaultMediaUrl || null,
+            media_type: content.mediaType || defaultMediaType || 'text'
+        }
+    };
+};
+
+/**
+ * Process a "value" object from change / sample / direct events
+ */
+const processValueObject = (value, results) => {
+    if (!value || typeof value !== 'object') return;
+
+    const contactsMap = {};
+    if (Array.isArray(value.contacts)) {
+        for (const c of value.contacts) {
+            if (c.wa_id) {
+                contactsMap[c.wa_id] = c.profile?.name || c.wa_id;
+            }
+        }
+    }
+
+    // Format 1: WhatsApp Cloud API messages array (Standard and Direct { field: 'messages', value: { contacts: [...], messages: [...] } })
+    if (Array.isArray(value.messages)) {
+        for (const msg of value.messages) {
+            const fromWaId = msg.from;
+            if (!fromWaId) continue;
+            const contactName = contactsMap[fromWaId] || `Lead ${fromWaId}`;
+            const event = buildNormalizedEvent({
+                senderId: fromWaId,
+                senderName: contactName,
+                messageId: msg.id,
+                timestamp: msg.timestamp || value.timestamp,
+                messageObj: msg
+            });
+            if (event) results.push(event);
+        }
+        return;
+    }
+
+    // Format 2: Sample / Test Webhook or single sender & message object
+    // e.g. { sender: { id: '12334' }, recipient: { id: '23245' }, timestamp: '...', message: { mid: '...', text: '...' } }
+    if (value.sender || value.message || value.from) {
+        const senderId = value.sender?.id || value.from || value.sender;
+        const senderName = value.sender?.name || (senderId ? contactsMap[senderId] : null);
+        const msgObj = value.message || value;
+        const msgId = msgObj.mid || msgObj.id || msgObj.message_id || value.mid;
+        const timestamp = value.timestamp || msgObj.timestamp;
+
+        const event = buildNormalizedEvent({
+            senderId,
+            senderName,
+            messageId: msgId,
+            timestamp,
+            messageObj: msgObj
+        });
+        if (event) results.push(event);
+    }
+};
+
+/**
  * Extract contacts and messages from Meta Webhook payload
- * @param {object} body - Meta Webhook Body
- * @returns {Array<{contact: {wa_id: string, name: string}, message: {message_id: string, from: string, timestamp: string, type: string, text: string, media_url: string, media_type: string}}>}
+ * Supports:
+ * 1. Direct { field: 'messages', value: { contacts: [...], messages: [...] } }
+ * 2. Meta Dashboard Sample / Test Payloads ({ sample: { field: "messages", value: { ... } } })
+ * 3. Standard WhatsApp Business Cloud API Payloads ({ object: "whatsapp_business_account", entry: [ { changes: [...] } ] })
+ * 4. Meta Messenger / Instagram Page Webhooks ({ object: "page", entry: [ { messaging: [...] } ] })
+ * 5. Direct message payload ({ sender, message } or { from, text })
+ * 
+ * @param {object} body - Webhook Body
+ * @returns {Array<{contact: {wa_id: string, name: string}, message: {message_id: string, from: string, timestamp: string, type: string, text: string, media_url: string|null, media_type: string}}>}
  */
 const extractWhatsAppWebhookEvents = (body) => {
     const results = [];
-
-    if (!body || body.object !== 'whatsapp_business_account' || !Array.isArray(body.entry)) {
+    if (!body || typeof body !== 'object') {
         return results;
     }
 
-    for (const entry of body.entry) {
-        if (!Array.isArray(entry.changes)) continue;
+    // 1. Direct root-level { field: "messages", value: { ... } } (Meta test event or direct webhook)
+    if ((body.field === 'messages' || body.field === 'message') && body.value) {
+        processValueObject(body.value, results);
+        if (results.length > 0) return results;
+    }
 
-        for (const change of entry.changes) {
-            if (change.field !== 'messages' || !change.value) continue;
+    // 2. Meta sample payload wrapper ({ sample: { field: "messages", value: { ... } } })
+    if (body.sample && typeof body.sample === 'object') {
+        const sampleVal = body.sample.value || body.sample;
+        processValueObject(sampleVal, results);
+        if (results.length > 0) return results;
+    }
 
-            const value = change.value;
-            const contactsMap = {};
-
-            // Map contacts by wa_id
-            if (Array.isArray(value.contacts)) {
-                for (const c of value.contacts) {
-                    contactsMap[c.wa_id] = c.profile?.name || c.wa_id;
+    // 3. Standard Meta "entry" array (WhatsApp Business Cloud API / Messenger)
+    if (Array.isArray(body.entry)) {
+        for (const entry of body.entry) {
+            // A) entry.changes array (WhatsApp Cloud API / Webhook change notifications)
+            if (Array.isArray(entry.changes)) {
+                for (const change of entry.changes) {
+                    if (change && change.value) {
+                        processValueObject(change.value, results);
+                    }
                 }
             }
 
-            // Extract messages
-            if (Array.isArray(value.messages)) {
-                for (const msg of value.messages) {
-                    const fromWaId = msg.from;
-                    const contactName = contactsMap[fromWaId] || `Lead ${fromWaId}`;
-                    let messageText = '';
-                    let mediaUrl = null;
-                    let mediaType = msg.type || 'text';
-
-                    if (msg.type === 'text' && msg.text?.body) {
-                        messageText = msg.text.body;
-                    } else if (msg.type === 'image') {
-                        messageText = msg.image?.caption || '[Image received]';
-                        mediaUrl = msg.image?.id || null;
-                    } else if (msg.type === 'document') {
-                        messageText = msg.document?.caption || `[Document: ${msg.document?.filename || 'File'}]`;
-                        mediaUrl = msg.document?.id || null;
-                    } else if (msg.type === 'audio') {
-                        messageText = '[Voice note / Audio message]';
-                        mediaUrl = msg.audio?.id || null;
-                    } else if (msg.type === 'video') {
-                        messageText = msg.video?.caption || '[Video message]';
-                        mediaUrl = msg.video?.id || null;
-                    } else if (msg.type === 'location') {
-                        messageText = `[Location: Lat ${msg.location?.latitude}, Long ${msg.location?.longitude}]`;
-                    } else if (msg.type === 'button') {
-                        messageText = msg.button?.text || '[Button click]';
-                    } else if (msg.type === 'interactive') {
-                        messageText = msg.interactive?.button_reply?.title || msg.interactive?.list_reply?.title || '[Interactive reply]';
-                    } else {
-                        messageText = `[${msg.type} message]`;
-                    }
-
-                    results.push({
-                        contact: {
-                            wa_id: fromWaId,
-                            name: contactName
-                        },
-                        message: {
-                            message_id: msg.id,
-                            from: fromWaId,
-                            timestamp: msg.timestamp || String(Math.floor(Date.now() / 1000)),
-                            type: mediaType,
-                            text: messageText,
-                            media_url: mediaUrl,
-                            media_type: mediaType
-                        }
+            // B) entry.messaging array (Facebook Messenger / Instagram webhook format)
+            if (Array.isArray(entry.messaging)) {
+                for (const msgItem of entry.messaging) {
+                    const senderId = msgItem.sender?.id;
+                    const senderName = msgItem.sender?.name;
+                    const msgObj = msgItem.message || {};
+                    const event = buildNormalizedEvent({
+                        senderId,
+                        senderName,
+                        messageId: msgObj.mid || msgObj.id,
+                        timestamp: msgItem.timestamp || entry.time,
+                        messageObj: msgObj
                     });
+                    if (event) results.push(event);
                 }
             }
         }
+        if (results.length > 0) return results;
+    }
+
+    // 4. Direct payload with value property or direct sender/message/from/messages
+    if (body.value) {
+        processValueObject(body.value, results);
+        if (results.length > 0) return results;
+    }
+
+    if (body.sender || body.from || body.message || body.messages) {
+        processValueObject(body, results);
     }
 
     return results;
