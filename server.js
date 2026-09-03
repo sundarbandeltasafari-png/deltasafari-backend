@@ -63,6 +63,7 @@ const invoiceRoute = require('./route/admin/invoiceRoute');
 const taskRoute = require('./route/admin/taskRoute');
 const noticeRoute = require('./route/admin/noticeRoute');
 const chatRoute = require('./route/admin/chatRoute');
+const bookingUsersRoute = require('./route/admin/bookingUsersRoute');
 
 // Frontend
 app.get('/', async (req, res) => {
@@ -106,6 +107,8 @@ app.use('/admin/crm/notices', noticeRoute)
 app.use('/admin/notices', noticeRoute)
 app.use('/admin/crm/chat', chatRoute)
 app.use('/admin/chat', chatRoute)
+app.use('/admin/crm/booking-users', bookingUsersRoute)
+app.use('/admin/booking-users', bookingUsersRoute)
 
 // 404
 app.use('/{*path}', (req, res) => {

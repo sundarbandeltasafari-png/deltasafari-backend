@@ -7,6 +7,7 @@ const {
     getTasksListHandler,
     createTaskHandler,
     getTaskDetailsHandler,
+    markTaskReadHandler,
     updateTaskStatusHandler,
     updateTaskHandler,
     deleteTaskHandler,
@@ -19,7 +20,11 @@ router.get('/stats', adminAuthMiddleWare, getTaskStatsHandler);
 router.get('/', adminAuthMiddleWare, getTasksListHandler);
 router.post('/', adminAuthMiddleWare, createTaskHandler);
 router.get('/:id', adminAuthMiddleWare, getTaskDetailsHandler);
-router.patch('/:id/status', adminAuthMiddleWare, updateTaskStatusHandler);
+router.post('/:id/read', adminAuthMiddleWare, markTaskReadHandler);
+router.route('/:id/status')
+    .patch(adminAuthMiddleWare, updateTaskStatusHandler)
+    .put(adminAuthMiddleWare, updateTaskStatusHandler)
+    .post(adminAuthMiddleWare, updateTaskStatusHandler);
 router.put('/:id', adminAuthMiddleWare, updateTaskHandler);
 router.delete('/:id', adminAuthMiddleWare, deleteTaskHandler);
 router.post('/:id/comments', adminAuthMiddleWare, addTaskCommentHandler);

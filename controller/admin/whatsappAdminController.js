@@ -7,7 +7,8 @@ const {
     getLeadManagersListModel,
     toggleLeadManagerStatusModel,
     manuallyAssignLeadModel,
-    getLeadDistributionStatsModel
+    getLeadDistributionStatsModel,
+    createManualLeadModel
 } = require('../../model/admin/whatsappModel');
 const { sendWhatsAppCloudMessage, normalizePhoneNumber } = require('../../helper/whatsappHelper');
 
@@ -266,6 +267,73 @@ const assignLead = async (req, res) => {
     }
 };
 
+/**
+ * Create a Manual Lead (Direct Entry from CRM WhatsApp Leads)
+ */
+const createManualLead = async (req, res) => {
+    try {
+        const {
+            name,
+            phone,
+            email,
+            assigned_to,
+            lead_type,
+            travel_date,
+            travel_destination,
+            adults,
+            children,
+            infants,
+            number_of_persons,
+            total_rooms,
+            rooms,
+            room_details,
+            package_name,
+            package_rate,
+            next_followup_date,
+            extra_note,
+            initial_message,
+            send_message_now
+        } = req.body;
+
+        if (!phone || !String(phone).trim()) {
+            return res.status(400).json({ status: false, msg: 'WhatsApp phone number is required.' });
+        }
+
+        const result = await createManualLeadModel({
+            name,
+            phone,
+            email,
+            assigned_to,
+            lead_type,
+            travel_date,
+            travel_destination,
+            adults,
+            children,
+            infants,
+            number_of_persons,
+            total_rooms,
+            rooms: rooms || room_details,
+            room_details: rooms || room_details,
+            package_name,
+            package_rate,
+            next_followup_date,
+            extra_note,
+            initial_message,
+            send_message_now: !!send_message_now,
+            requestingUser: req.user
+        });
+
+        return res.status(200).json({
+            status: true,
+            msg: result.is_new ? 'New WhatsApp lead created successfully.' : 'Lead updated successfully with new details.',
+            data: result
+        });
+    } catch (error) {
+        console.error('[Admin WhatsApp createManualLead Error]:', error);
+        return res.status(500).json({ status: false, msg: error.message || 'Internal Server Error' });
+    }
+};
+
 module.exports = {
     getContacts,
     getMessages,
@@ -274,6 +342,7 @@ module.exports = {
     getConfigStatus,
     getLeadManagers,
     toggleLeadManager,
-    assignLead
+    assignLead,
+    createManualLead
 };
 

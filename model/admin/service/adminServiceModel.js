@@ -780,6 +780,8 @@ function deleteContactQueryAdminModel(id) {
 function getAllBookingsAdminModel() {
     return new Promise((resolve, reject) => {
         const sql = `SELECT bookings.*, bookings.id as bookings_id, 
+            DATE_FORMAT(bookings.departure_date, '%Y-%m-%d') as departure_date_str,
+            DATE_FORMAT(bookings.created_at, '%Y-%m-%d') as created_at_str,
             packages_master.title, packages_master.slug, packages_master.duration_days, packages_master.duration_nights, packages_master.package_type,
             packages_master.agent_discount, packages_master.agent_actual_price,
             package_assets.path, package_assets.type as asset_type, 
@@ -815,6 +817,8 @@ function getAllBookingsAdminModel() {
 function getParticularBookingAdminModel(id) {
     return new Promise((resolve, reject) => {
         const sql = `SELECT bookings.*, bookings.id as bookings_id, 
+            DATE_FORMAT(bookings.departure_date, '%Y-%m-%d') as departure_date_str,
+            DATE_FORMAT(bookings.created_at, '%Y-%m-%d') as created_at_str,
             packages_master.title, packages_master.slug, packages_master.duration_days, packages_master.duration_nights, packages_master.package_type,
             packages_master.agent_discount, packages_master.agent_actual_price,
             package_assets.path, package_assets.type as asset_type, 

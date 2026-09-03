@@ -4,7 +4,7 @@ const router = express.Router();
 const { adminAuthMiddleWare } = require('../../middleware/middleware');
 const { getAllCategory, createCategory, getParticularCategory, setCategory, deleteCategory } = require('../../controller/admin/service/adminCategoryController');
 const { getAllPost, createPost, updatePost, deletePost, getParticularPost, getPostTags } = require('../../controller/admin/service/adminPostController');
-const { getAllContactList, getAllCorporateLeadEnquiries, getParticularCorporateLeadEnquiry, updateCorporateLeadEnquiry, getAdminDashboard, updateHolidayEnquiry, getParticularHolidayEnquiry, getAllHolidayEnquiries, getAllContactQueriesAdmin, getParticularContactQueryAdmin, updateContactQueryAdmin, deleteContactQueryAdmin, getAllBookings, getParticularBooking, updateBooking, deleteBooking } = require('../../controller/admin/service/adminServiceController');
+const { getAllContactList, getAllCorporateLeadEnquiries, getParticularCorporateLeadEnquiry, updateCorporateLeadEnquiry, getAdminDashboard, updateHolidayEnquiry, getParticularHolidayEnquiry, getAllHolidayEnquiries, getAllContactQueriesAdmin, getParticularContactQueryAdmin, updateContactQueryAdmin, deleteContactQueryAdmin, getAllBookings, getCombinedBookings, getParticularBooking, updateBooking, deleteBooking } = require('../../controller/admin/service/adminServiceController');
 const { getAllZone, getParticularZone, createZone, setZone, deleteZone } = require('../../controller/admin/service/adminZoneController');
 const { createUploader } = require('../../helper/uploadHelper');
 const { getAllCity, cityStatus, getParticularCity, getSearchCity, createCity, updateCity, getAllCountries } = require('../../controller/admin/service/adminCityController');
@@ -67,6 +67,7 @@ router.route('/deleteContactQuery').delete(adminAuthMiddleWare, deleteContactQue
 
 // Bookings (Admin Routes: admin/service/getAllBookings)
 router.route('/getAllBookings').get(adminAuthMiddleWare, getAllBookings).post(adminAuthMiddleWare, getAllBookings);
+router.route('/getCombinedBookings').get(adminAuthMiddleWare, getCombinedBookings).post(adminAuthMiddleWare, getCombinedBookings);
 router.route('/getParticularBooking').get(adminAuthMiddleWare, getParticularBooking).post(adminAuthMiddleWare, getParticularBooking);
 router.route('/updateBooking').put(adminAuthMiddleWare, updateBooking).post(adminAuthMiddleWare, updateBooking);
 router.route('/deleteBooking').delete(adminAuthMiddleWare, deleteBooking);

@@ -2,21 +2,21 @@ const dotenv = require('dotenv');
 dotenv.config();
 var mysql = require('mysql');
 
-// var connection = mysql.createPool({
-//     connectionLimit: 10,
-//     host: process.env.DBHOST || 'localhost',
-//     user: process.env.DBUSER || 'root',
-//     password: process.env.DBPASS || '',
-//     database: process.env.DB || 'deltasafari'
-// });
-
 var connection = mysql.createPool({
     connectionLimit: 10,
-    host: '127.0.0.1',
-    user: 'u662254688_deltasafari',
-    password: 'Admin1q2w--!',
-    database: 'u662254688_deltasafari'
+    host: process.env.DBHOST || 'localhost',
+    user: process.env.DBUSER || 'root',
+    password: process.env.DBPASS || '',
+    database: process.env.DB || 'deltasafari'
 });
+
+// var connection = mysql.createPool({
+//     connectionLimit: 10,
+//     host: '127.0.0.1',
+//     user: 'u662254688_deltasafari',
+//     password: 'Admin1q2w--!',
+//     database: 'u662254688_deltasafari'
+// });
 
 
 // Auto Migration for Referral Program & Tables

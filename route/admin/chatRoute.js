@@ -8,10 +8,12 @@ const {
     getConversationMessagesHandler,
     sendMessageHandler,
     uploadChatFileHandler,
-    markReadHandler
+    markReadHandler,
+    getChatUnreadCountHandler
 } = require('../../controller/admin/chatController');
 
 router.get('/users', adminAuthMiddleWare, getChatUsersHandler);
+router.get('/unread-count', adminAuthMiddleWare, getChatUnreadCountHandler);
 router.get('/conversations', adminAuthMiddleWare, getUserConversationsHandler);
 router.post('/conversations/direct', adminAuthMiddleWare, getOrCreateDirectConversationHandler);
 router.get('/conversations/:id/messages', adminAuthMiddleWare, getConversationMessagesHandler);

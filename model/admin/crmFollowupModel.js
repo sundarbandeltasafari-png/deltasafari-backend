@@ -14,8 +14,12 @@ function initCrmFollowupTables() {
             lead_type ENUM('cold', 'warm', 'hot') NOT NULL DEFAULT 'warm',
             travel_date DATE NULL,
             travel_destination VARCHAR(255) NULL,
+            adults INT DEFAULT 1,
+            children INT DEFAULT 0,
+            infants INT DEFAULT 0,
             number_of_persons INT DEFAULT 1,
             total_rooms INT DEFAULT 1,
+            room_details LONGTEXT NULL,
             package_name VARCHAR(255) NULL,
             package_rate VARCHAR(100) NULL,
             is_converted TINYINT(1) DEFAULT 0,
@@ -49,8 +53,12 @@ function initCrmFollowupTables() {
             next_followup_date DATE NULL,
             travel_date DATE NULL,
             travel_destination VARCHAR(255) NULL,
+            adults INT DEFAULT 1,
+            children INT DEFAULT 0,
+            infants INT DEFAULT 0,
             number_of_persons INT DEFAULT 1,
             total_rooms INT DEFAULT 1,
+            room_details LONGTEXT NULL,
             package_name VARCHAR(255) NULL,
             package_rate VARCHAR(100) NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -70,7 +78,11 @@ function initCrmFollowupTables() {
 
     // Run safe migrations for existing tables
     const migrations = [
-        "ALTER TABLE crm_lead_followups ADD COLUMN package_name VARCHAR(255) NULL AFTER total_rooms",
+        "ALTER TABLE crm_lead_followups ADD COLUMN adults INT DEFAULT 1 AFTER travel_destination",
+        "ALTER TABLE crm_lead_followups ADD COLUMN children INT DEFAULT 0 AFTER adults",
+        "ALTER TABLE crm_lead_followups ADD COLUMN infants INT DEFAULT 0 AFTER children",
+        "ALTER TABLE crm_lead_followups ADD COLUMN room_details LONGTEXT NULL AFTER total_rooms",
+        "ALTER TABLE crm_lead_followups ADD COLUMN package_name VARCHAR(255) NULL AFTER room_details",
         "ALTER TABLE crm_lead_followups ADD COLUMN package_rate VARCHAR(100) NULL AFTER package_name",
         "ALTER TABLE crm_lead_followups ADD COLUMN is_converted TINYINT(1) DEFAULT 0 AFTER package_rate",
         "ALTER TABLE crm_lead_followups ADD COLUMN converted_at DATETIME NULL AFTER is_converted",
@@ -78,7 +90,11 @@ function initCrmFollowupTables() {
         "ALTER TABLE crm_lead_followups ADD COLUMN converted_amount VARCHAR(100) NULL AFTER converted_by",
         "ALTER TABLE crm_lead_followups ADD COLUMN conversion_note TEXT NULL AFTER converted_amount",
         "ALTER TABLE crm_lead_followups ADD INDEX idx_is_converted (is_converted)",
-        "ALTER TABLE crm_lead_followup_logs ADD COLUMN package_name VARCHAR(255) NULL AFTER total_rooms",
+        "ALTER TABLE crm_lead_followup_logs ADD COLUMN adults INT DEFAULT 1 AFTER travel_destination",
+        "ALTER TABLE crm_lead_followup_logs ADD COLUMN children INT DEFAULT 0 AFTER adults",
+        "ALTER TABLE crm_lead_followup_logs ADD COLUMN infants INT DEFAULT 0 AFTER children",
+        "ALTER TABLE crm_lead_followup_logs ADD COLUMN room_details LONGTEXT NULL AFTER total_rooms",
+        "ALTER TABLE crm_lead_followup_logs ADD COLUMN package_name VARCHAR(255) NULL AFTER room_details",
         "ALTER TABLE crm_lead_followup_logs ADD COLUMN package_rate VARCHAR(100) NULL AFTER package_name"
     ];
 
@@ -117,8 +133,13 @@ function saveLeadFollowupModel({
     lead_type = 'warm',
     travel_date = null,
     travel_destination = '',
+    adults = null,
+    children = null,
+    infants = null,
     number_of_persons = 1,
     total_rooms = 1,
+    rooms = null,
+    room_details = null,
     package_name = '',
     package_rate = '',
     extra_note = '',
@@ -140,8 +161,27 @@ function saveLeadFollowupModel({
 
         const formattedTravelDate = formatDateForDb(travel_date);
         const formattedNextFollowupDate = formatDateForDb(next_followup_date);
-        const parsedPersons = Math.max(1, parseInt(number_of_persons) || 1);
+
+        const parsedAdults = adults !== null && !isNaN(parseInt(adults)) ? Math.max(0, parseInt(adults)) : (parseInt(number_of_persons) || 1);
+        const parsedChildren = children !== null && !isNaN(parseInt(children)) ? Math.max(0, parseInt(children)) : 0;
+        const parsedInfants = infants !== null && !isNaN(parseInt(infants)) ? Math.max(0, parseInt(infants)) : 0;
+        const totalPax = parsedAdults + parsedChildren + parsedInfants;
+        const parsedPersons = Math.max(1, parseInt(number_of_persons) || totalPax || 1);
         const parsedRooms = Math.max(1, parseInt(total_rooms) || 1);
+
+        const effectiveRooms = rooms || room_details;
+        let serializedRooms = null;
+        if (effectiveRooms) {
+            if (typeof effectiveRooms === 'string') {
+                serializedRooms = effectiveRooms;
+            } else {
+                try {
+                    serializedRooms = JSON.stringify(effectiveRooms);
+                } catch (e) {
+                    serializedRooms = null;
+                }
+            }
+        }
 
         try {
             // 1. Check if contact exists
@@ -182,8 +222,12 @@ function saveLeadFollowupModel({
                         lead_type = ?,
                         travel_date = ?,
                         travel_destination = ?,
+                        adults = ?,
+                        children = ?,
+                        infants = ?,
                         number_of_persons = ?,
                         total_rooms = ?,
+                        room_details = COALESCE(?, room_details),
                         package_name = ?,
                         package_rate = ?,
                         extra_note = ?,
@@ -200,8 +244,12 @@ function saveLeadFollowupModel({
                         normalizedLeadType,
                         formattedTravelDate,
                         travel_destination ? travel_destination.trim() : '',
+                        parsedAdults,
+                        parsedChildren,
+                        parsedInfants,
                         parsedPersons,
                         parsedRooms,
+                        serializedRooms,
                         package_name ? package_name.trim() : '',
                         package_rate ? package_rate.trim() : '',
                         extra_note ? extra_note.trim() : '',
@@ -224,8 +272,12 @@ function saveLeadFollowupModel({
                         lead_type,
                         travel_date,
                         travel_destination,
+                        adults,
+                        children,
+                        infants,
                         number_of_persons,
                         total_rooms,
+                        room_details,
                         package_name,
                         package_rate,
                         extra_note,
@@ -233,7 +285,7 @@ function saveLeadFollowupModel({
                         last_followup_at,
                         last_followup_by,
                         created_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
                 `;
                 const insertResult = await new Promise((res, rej) => {
                     connection.query(insertSql, [
@@ -244,8 +296,12 @@ function saveLeadFollowupModel({
                         normalizedLeadType,
                         formattedTravelDate,
                         travel_destination ? travel_destination.trim() : '',
+                        parsedAdults,
+                        parsedChildren,
+                        parsedInfants,
                         parsedPersons,
                         parsedRooms,
+                        serializedRooms,
                         package_name ? package_name.trim() : '',
                         package_rate ? package_rate.trim() : '',
                         extra_note ? extra_note.trim() : '',
@@ -271,12 +327,16 @@ function saveLeadFollowupModel({
                     next_followup_date,
                     travel_date,
                     travel_destination,
+                    adults,
+                    children,
+                    infants,
                     number_of_persons,
                     total_rooms,
+                    room_details,
                     package_name,
                     package_rate,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
             `;
             await new Promise((res, rej) => {
                 connection.query(insertLogSql, [
@@ -288,8 +348,12 @@ function saveLeadFollowupModel({
                     formattedNextFollowupDate,
                     formattedTravelDate,
                     travel_destination ? travel_destination.trim() : '',
+                    parsedAdults,
+                    parsedChildren,
+                    parsedInfants,
                     parsedPersons,
                     parsedRooms,
+                    serializedRooms,
                     package_name ? package_name.trim() : '',
                     package_rate ? package_rate.trim() : ''
                 ], (err, result) => {
@@ -325,6 +389,13 @@ function markLeadConvertedModel({
     package_name = '',
     conversion_note = '',
     travel_date = null,
+    adults = null,
+    children = null,
+    infants = null,
+    number_of_persons = null,
+    total_rooms = null,
+    rooms = null,
+    room_details = null,
     admin_user_id
 }) {
     return new Promise(async (resolve, reject) => {
@@ -333,10 +404,34 @@ function markLeadConvertedModel({
 
         const formattedTravelDate = formatDateForDb(travel_date);
 
+        const effectiveRooms = rooms || room_details;
+        let serializedRooms = null;
+        if (effectiveRooms) {
+            if (typeof effectiveRooms === 'string') {
+                serializedRooms = effectiveRooms;
+            } else {
+                try {
+                    serializedRooms = JSON.stringify(effectiveRooms);
+                } catch (e) {
+                    serializedRooms = null;
+                }
+            }
+        }
+
+        const parsedAdults = adults !== null && !isNaN(parseInt(adults)) ? parseInt(adults) : null;
+        const parsedChildren = children !== null && !isNaN(parseInt(children)) ? parseInt(children) : null;
+        const parsedInfants = infants !== null && !isNaN(parseInt(infants)) ? parseInt(infants) : null;
+        const parsedPersons = number_of_persons !== null && !isNaN(parseInt(number_of_persons))
+            ? parseInt(number_of_persons)
+            : (parsedAdults !== null ? (parsedAdults + (parsedChildren || 0) + (parsedInfants || 0)) : null);
+        const parsedRooms = total_rooms !== null && !isNaN(parseInt(total_rooms))
+            ? parseInt(total_rooms)
+            : (Array.isArray(effectiveRooms) ? effectiveRooms.length : null);
+
         try {
             // 1. Check if followup exists
             const existingFollowupRows = await new Promise((res, rej) => {
-                connection.query(`SELECT id, lead_name, phone, package_name, package_rate, travel_destination, number_of_persons, total_rooms FROM crm_lead_followups WHERE contact_id = ? LIMIT 1`, [contact_id], (err, rows) => {
+                connection.query(`SELECT id, lead_name, phone, package_name, package_rate, travel_destination, adults, children, infants, number_of_persons, total_rooms, room_details FROM crm_lead_followups WHERE contact_id = ? LIMIT 1`, [contact_id], (err, rows) => {
                     if (err) return rej(err);
                     res(rows || []);
                 });
@@ -360,6 +455,12 @@ function markLeadConvertedModel({
                         package_rate = COALESCE(NULLIF(?, ''), package_rate),
                         conversion_note = ?,
                         travel_date = COALESCE(?, travel_date),
+                        adults = COALESCE(?, adults),
+                        children = COALESCE(?, children),
+                        infants = COALESCE(?, infants),
+                        number_of_persons = COALESCE(?, number_of_persons),
+                        total_rooms = COALESCE(?, total_rooms),
+                        room_details = COALESCE(?, room_details),
                         last_followup_at = NOW(),
                         last_followup_by = ?
                     WHERE id = ?
@@ -373,6 +474,12 @@ function markLeadConvertedModel({
                         converted_amount ? String(converted_amount).trim() : '',
                         conversion_note ? conversion_note.trim() : '',
                         formattedTravelDate,
+                        parsedAdults,
+                        parsedChildren,
+                        parsedInfants,
+                        parsedPersons,
+                        parsedRooms,
+                        serializedRooms,
                         admin_user_id,
                         followupId
                     ], (err, result) => {
@@ -407,10 +514,16 @@ function markLeadConvertedModel({
                         package_rate,
                         conversion_note,
                         travel_date,
+                        adults,
+                        children,
+                        infants,
+                        number_of_persons,
+                        total_rooms,
+                        room_details,
                         last_followup_at,
                         last_followup_by,
                         created_by
-                    ) VALUES (?, ?, ?, 1, NOW(), ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
+                    ) VALUES (?, ?, ?, 1, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
                 `;
 
                 const insertRes = await new Promise((res, rej) => {
@@ -424,6 +537,12 @@ function markLeadConvertedModel({
                         converted_amount ? String(converted_amount).trim() : '',
                         conversion_note ? conversion_note.trim() : '',
                         formattedTravelDate,
+                        parsedAdults || 1,
+                        parsedChildren || 0,
+                        parsedInfants || 0,
+                        parsedPersons || 1,
+                        parsedRooms || 1,
+                        serializedRooms,
                         admin_user_id,
                         admin_user_id
                     ], (err, result) => {
@@ -448,10 +567,14 @@ function markLeadConvertedModel({
                     package_rate,
                     travel_date,
                     travel_destination,
+                    adults,
+                    children,
+                    infants,
                     number_of_persons,
                     total_rooms,
+                    room_details,
                     created_at
-                ) VALUES (?, ?, ?, 'converted', ?, ?, ?, ?, ?, ?, ?, NOW())
+                ) VALUES (?, ?, ?, 'converted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
             `;
 
             await new Promise((res, rej) => {
@@ -464,8 +587,12 @@ function markLeadConvertedModel({
                     converted_amount || currentFollowup?.package_rate || '',
                     formattedTravelDate || currentFollowup?.travel_date || null,
                     currentFollowup?.travel_destination || 'Sundarban',
-                    currentFollowup?.number_of_persons || 1,
-                    currentFollowup?.total_rooms || 1
+                    parsedAdults !== null ? parsedAdults : (currentFollowup?.adults || 1),
+                    parsedChildren !== null ? parsedChildren : (currentFollowup?.children || 0),
+                    parsedInfants !== null ? parsedInfants : (currentFollowup?.infants || 0),
+                    parsedPersons !== null ? parsedPersons : (currentFollowup?.number_of_persons || 1),
+                    parsedRooms !== null ? parsedRooms : (currentFollowup?.total_rooms || 1),
+                    serializedRooms || currentFollowup?.room_details || null
                 ], (err, result) => {
                     if (err) return rej(err);
                     res(result);
@@ -534,6 +661,7 @@ function unmarkLeadConvertedModel({
 function getFollowupsListModel({
     page = 1,
     limit = 25,
+    contact_id = '',
     search = '',
     lead_type = '',
     is_today_only = false,
@@ -564,12 +692,18 @@ function getFollowupsListModel({
             }
         }
 
+        // 1b. Specific contact_id filter
+        if (contact_id && !isNaN(Number(contact_id))) {
+            conditions.push(`f.contact_id = ?`);
+            params.push(Number(contact_id));
+        }
+
         // 2. Converted vs Active Leads Filter
         const isConvertedFilter = is_converted === 'true' || is_converted === true || is_converted === '1' || lead_type === 'converted';
         if (isConvertedFilter) {
             conditions.push(`f.is_converted = 1`);
-        } else {
-            // Default: STRICTLY ONLY active follow-ups (converted leads are excluded)
+        } else if (!contact_id) {
+            // Default: STRICTLY ONLY active follow-ups (converted leads are excluded) when not querying specific contact_id
             conditions.push(`(f.is_converted = 0 OR f.is_converted IS NULL)`);
         }
 
@@ -633,14 +767,21 @@ function getFollowupsListModel({
             SELECT 
                 f.id AS followup_id,
                 f.contact_id,
+                DATE_FORMAT(f.travel_date, '%Y-%m-%d') AS travel_date_str,
+                DATE_FORMAT(f.converted_at, '%Y-%m-%d') AS converted_at_str,
+                DATE_FORMAT(f.created_at, '%Y-%m-%d') AS followup_created_at_str,
                 COALESCE(NULLIF(f.lead_name, ''), c.name, 'WhatsApp Customer') AS lead_name,
                 COALESCE(NULLIF(f.phone, ''), c.wa_id) AS phone,
                 f.email,
                 f.lead_type,
                 f.travel_date,
                 f.travel_destination,
+                f.adults,
+                f.children,
+                f.infants,
                 f.number_of_persons,
                 f.total_rooms,
+                f.room_details,
                 f.package_name,
                 f.package_rate,
                 f.is_converted,
@@ -715,8 +856,26 @@ function getFollowupsListModel({
 
             connection.query(countSql, params, (cErr, cRows) => {
                 const total = (!cErr && cRows && cRows[0]) ? cRows[0].total : (rows ? rows.length : 0);
+                const formattedFollowups = (rows ? JSON.parse(JSON.stringify(rows)) : []).map(row => {
+                    let parsedRooms = null;
+                    if (row.room_details) {
+                        try {
+                            parsedRooms = typeof row.room_details === 'string' ? JSON.parse(row.room_details) : row.room_details;
+                        } catch (e) {
+                            parsedRooms = null;
+                        }
+                    }
+                    return {
+                        ...row,
+                        adults: row.adults !== null && row.adults !== undefined ? row.adults : (row.number_of_persons || 1),
+                        children: row.children || 0,
+                        infants: row.infants || 0,
+                        rooms: parsedRooms,
+                        room_details: parsedRooms
+                    };
+                });
                 resolve({
-                    followups: rows ? JSON.parse(JSON.stringify(rows)) : [],
+                    followups: formattedFollowups,
                     total,
                     page: parsedPage,
                     limit: parsedLimit,
@@ -731,7 +890,7 @@ function getFollowupsListModel({
  * Get Follow-up Summary Statistics
  */
 function getFollowupStatsModel(requestingUser = null) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         const isSuperAdmin = requestingUser?.admin === 1;
         const currentUserId = requestingUser?.id;
 
@@ -740,7 +899,7 @@ function getFollowupStatsModel(requestingUser = null) {
 
         if (!isSuperAdmin) {
             whereClause = 'WHERE c.assigned_to = ?';
-            params = [currentUserId];
+            params.push(currentUserId);
         }
 
         const sql = `
@@ -812,8 +971,12 @@ function getFollowupLogsHistoryModel(contactId, requestingUser = null) {
                 l.next_followup_date,
                 l.travel_date,
                 l.travel_destination,
+                l.adults,
+                l.children,
+                l.infants,
                 l.number_of_persons,
                 l.total_rooms,
+                l.room_details,
                 l.package_name,
                 l.package_rate,
                 l.created_at,
@@ -827,9 +990,27 @@ function getFollowupLogsHistoryModel(contactId, requestingUser = null) {
 
         connection.query(sql, [contactId], (err, rows) => {
             if (err) return reject(err);
+            const formattedLogs = (rows ? JSON.parse(JSON.stringify(rows)) : []).map(log => {
+                let parsedRooms = null;
+                if (log.room_details) {
+                    try {
+                        parsedRooms = typeof log.room_details === 'string' ? JSON.parse(log.room_details) : log.room_details;
+                    } catch (e) {
+                        parsedRooms = null;
+                    }
+                }
+                return {
+                    ...log,
+                    adults: log.adults !== null && log.adults !== undefined ? log.adults : (log.number_of_persons || 1),
+                    children: log.children || 0,
+                    infants: log.infants || 0,
+                    rooms: parsedRooms,
+                    room_details: parsedRooms
+                };
+            });
             resolve({
                 contact: contact,
-                logs: rows ? JSON.parse(JSON.stringify(rows)) : []
+                logs: formattedLogs
             });
         });
     });
@@ -886,14 +1067,31 @@ function getSingleLeadFollowupModel(contactId, requestingUser = null) {
 
         connection.query(followupSql, [contactId], async (err, rows) => {
             if (err) return reject(err);
-            const followup = rows && rows.length > 0 ? rows[0] : null;
+            const rawFollowup = rows && rows.length > 0 ? rows[0] : null;
+
+            let followup = rawFollowup ? JSON.parse(JSON.stringify(rawFollowup)) : null;
+            if (followup) {
+                let parsedRooms = null;
+                if (followup.room_details) {
+                    try {
+                        parsedRooms = typeof followup.room_details === 'string' ? JSON.parse(followup.room_details) : followup.room_details;
+                    } catch (e) {
+                        parsedRooms = null;
+                    }
+                }
+                followup.adults = followup.adults !== null && followup.adults !== undefined ? followup.adults : (followup.number_of_persons || 1);
+                followup.children = followup.children || 0;
+                followup.infants = followup.infants || 0;
+                followup.rooms = parsedRooms;
+                followup.room_details = parsedRooms;
+            }
 
             // Also fetch recent logs
             const logsData = await getFollowupLogsHistoryModel(contactId, requestingUser);
 
             resolve({
                 contact: contact,
-                followup: followup ? JSON.parse(JSON.stringify(followup)) : null,
+                followup: followup,
                 logs: logsData?.logs || []
             });
         });

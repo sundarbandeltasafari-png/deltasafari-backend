@@ -8,9 +8,15 @@ const {
     deletePeakDate
 } = require('../../controller/admin/peakDatesController');
 
-router.get('/', adminAuthMiddleWare, getPeakDates);
-router.post('/', adminAuthMiddleWare, createPeakDate);
-router.put('/:id', adminAuthMiddleWare, updatePeakDate);
-router.delete('/:id', adminAuthMiddleWare, deletePeakDate);
+router.route('/')
+    .get(adminAuthMiddleWare, getPeakDates)
+    .post(adminAuthMiddleWare, createPeakDate);
+
+router.route('/:id')
+    .get(adminAuthMiddleWare, getPeakDates)
+    .put(adminAuthMiddleWare, updatePeakDate)
+    .post(adminAuthMiddleWare, updatePeakDate)
+    .patch(adminAuthMiddleWare, updatePeakDate)
+    .delete(adminAuthMiddleWare, deletePeakDate);
 
 module.exports = router;

@@ -24,8 +24,13 @@ const saveLeadFollowup = asyncHandler(async (req, res, next) => {
             lead_type,
             travel_date,
             travel_destination,
+            adults,
+            children,
+            infants,
             number_of_persons,
             total_rooms,
+            rooms,
+            room_details,
             package_name,
             package_rate,
             extra_note,
@@ -64,8 +69,13 @@ const saveLeadFollowup = asyncHandler(async (req, res, next) => {
             lead_type,
             travel_date,
             travel_destination,
+            adults,
+            children,
+            infants,
             number_of_persons,
             total_rooms,
+            rooms: rooms || room_details,
+            room_details: rooms || room_details,
             package_name,
             package_rate,
             extra_note,
@@ -94,7 +104,14 @@ const markLeadConverted = asyncHandler(async (req, res, next) => {
             converted_amount,
             package_name,
             conversion_note,
-            travel_date
+            travel_date,
+            adults,
+            children,
+            infants,
+            number_of_persons,
+            total_rooms,
+            rooms,
+            room_details
         } = req.body;
 
         if (!contact_id) {
@@ -127,6 +144,13 @@ const markLeadConverted = asyncHandler(async (req, res, next) => {
             package_name,
             conversion_note,
             travel_date,
+            adults,
+            children,
+            infants,
+            number_of_persons,
+            total_rooms,
+            rooms: rooms || room_details,
+            room_details: rooms || room_details,
             admin_user_id: currentUserId
         });
 
@@ -190,6 +214,7 @@ const getFollowupsList = asyncHandler(async (req, res, next) => {
     try {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 25;
+        const contact_id = req.query.contact_id || '';
         const search = req.query.search || '';
         const lead_type = req.query.lead_type || '';
         const is_today_only = req.query.is_today_only === 'true' || req.query.today === 'true';
@@ -202,6 +227,7 @@ const getFollowupsList = asyncHandler(async (req, res, next) => {
         const result = await getFollowupsListModel({
             page,
             limit,
+            contact_id,
             search,
             lead_type,
             is_today_only,

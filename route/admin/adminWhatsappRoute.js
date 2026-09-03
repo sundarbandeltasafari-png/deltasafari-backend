@@ -9,11 +9,14 @@ const {
     getConfigStatus,
     getLeadManagers,
     toggleLeadManager,
-    assignLead
+    assignLead,
+    createManualLead
 } = require('../../controller/admin/whatsappAdminController');
 
 // All endpoints protected with adminAuthMiddleWare
 router.get('/contacts', adminAuthMiddleWare, getContacts);
+router.post('/contacts/manual', adminAuthMiddleWare, createManualLead);
+router.post('/create-lead', adminAuthMiddleWare, createManualLead);
 router.get('/messages/:contactId', adminAuthMiddleWare, getMessages);
 router.post('/send', adminAuthMiddleWare, sendMessage);
 router.get('/stats', adminAuthMiddleWare, getStats);

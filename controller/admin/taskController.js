@@ -4,6 +4,7 @@ const {
     createTask,
     getTasksList,
     getTaskById,
+    markTaskAsRead,
     updateTaskStatus,
     updateTask,
     deleteTask,
@@ -147,6 +148,14 @@ const getTaskDetailsHandler = asyncHandler(async (req, res) => {
         }
 
         const activities = await getTaskActivities(taskId);
+
+        if (req.user?.id) {
+            try {
+                const { emitTaskCountUpdate } = require('../../socket/chatSocket');
+                emitTaskCountUpdate(req.user.id);
+            } catch (sErr) {}
+        }
+
         res.status(200).json({ status: true, task, activities });
     } catch (err) {
         console.error('[TaskController] getTaskDetails error:', err);
@@ -168,8 +177,31 @@ const updateTaskStatusHandler = asyncHandler(async (req, res) => {
             return res.status(400).json({ status: false, msg: 'Invalid task status.' });
         }
 
+        // Permission check: Only Admin (admin = 1 or 2) can complete tasks
+        if (status === 'completed') {
+            const isAdmin = Number(req.user?.admin) === 1 || Number(req.user?.admin) === 2;
+            if (!isAdmin) {
+                return res.status(403).json({
+                    status: false,
+                    msg: 'Permission denied: Employees cannot complete tasks. Only an Administrator can mark a task as completed.'
+                });
+            }
+        }
+
         const userId = req.user?.id || 1;
         await updateTaskStatus(taskId, status, userId, req.user);
+
+        // Emit real-time socket task count update
+        try {
+            const { emitTaskCountUpdate } = require('../../socket/chatSocket');
+            const { getTaskById } = require('../../model/admin/taskModel');
+            const task = await getTaskById(taskId, { admin: 1 });
+            if (task?.assigned_to) {
+                emitTaskCountUpdate(task.assigned_to);
+            }
+        } catch (sErr) {
+            console.error('[TaskController] Socket status update notice:', sErr);
+        }
 
         res.status(200).json({
             status: true,
@@ -190,7 +222,39 @@ const updateTaskHandler = asyncHandler(async (req, res) => {
         const taskId = parseInt(req.params.id);
         const userId = req.user?.id || 1;
 
+        // Permission check: Only Admin can complete tasks
+        if (req.body?.status === 'completed') {
+            const isAdmin = Number(req.user?.admin) === 1 || Number(req.user?.admin) === 2;
+            if (!isAdmin) {
+                return res.status(403).json({
+                    status: false,
+                    msg: 'Permission denied: Employees cannot complete tasks. Only an Administrator can mark a task as completed.'
+                });
+            }
+        }
+
         await updateTask(taskId, req.body, userId, req.user);
+
+        // Emit real-time socket updates
+        try {
+            const { emitTaskCountUpdate, sendTaskNotification } = require('../../socket/chatSocket');
+            const { getTaskById } = require('../../model/admin/taskModel');
+            const updatedTask = await getTaskById(taskId, { admin: 1 });
+            if (updatedTask?.assigned_to) {
+                emitTaskCountUpdate(updatedTask.assigned_to);
+                if (req.body?.assigned_to && parseInt(req.body.assigned_to) !== userId) {
+                    sendTaskNotification(updatedTask.assigned_to, {
+                        id: updatedTask.id,
+                        title: updatedTask.title,
+                        priority: updatedTask.priority,
+                        assigned_by_name: `${req.user.first_name || 'Admin'} ${req.user.last_name || ''}`.trim()
+                    });
+                }
+            }
+        } catch (sErr) {
+            console.error('[TaskController] Socket task update notice:', sErr);
+        }
+
         res.status(200).json({ status: true, msg: 'Task updated successfully.' });
     } catch (err) {
         console.error('[TaskController] updateTask error:', err);
@@ -236,12 +300,37 @@ const addTaskCommentHandler = asyncHandler(async (req, res) => {
     }
 });
 
+/**
+ * @desc Explicitly mark task as read for the logged in user
+ * @route POST /admin/crm/tasks/:id/read
+ */
+const markTaskReadHandler = asyncHandler(async (req, res) => {
+    try {
+        const taskId = parseInt(req.params.id);
+        const userId = req.user?.id;
+        await markTaskAsRead(taskId, userId);
+
+        if (userId) {
+            try {
+                const { emitTaskCountUpdate } = require('../../socket/chatSocket');
+                emitTaskCountUpdate(userId);
+            } catch (sErr) {}
+        }
+
+        res.status(200).json({ status: true, msg: 'Task marked as read.' });
+    } catch (err) {
+        console.error('[TaskController] markTaskRead error:', err);
+        res.status(500).json({ status: false, msg: err.message || 'Error marking task as read.' });
+    }
+});
+
 module.exports = {
     getAdminUsersListHandler,
     getTaskStatsHandler,
     getTasksListHandler,
     createTaskHandler,
     getTaskDetailsHandler,
+    markTaskReadHandler,
     updateTaskStatusHandler,
     updateTaskHandler,
     deleteTaskHandler,

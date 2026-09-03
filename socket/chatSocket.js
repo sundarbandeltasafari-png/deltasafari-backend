@@ -92,6 +92,19 @@ function initSocketServer(httpServer) {
                         sender_first_name: savedMessage.sender_first_name,
                         message: savedMessage
                     });
+
+                    // For recipients (not sender): send real-time notification alert and update unread count
+                    if (pId !== parseInt(sender_id)) {
+                        io.to(`user_${pId}`).emit('chat_notification', {
+                            id: savedMessage.id,
+                            conversation_id,
+                            sender_id,
+                            sender_name: `${savedMessage.sender_first_name || 'Staff'} ${savedMessage.sender_last_name || ''}`.trim(),
+                            message: savedMessage.message_type === 'image' ? '📷 Sent an image' : (savedMessage.message_type === 'file' ? `📎 Sent a file: ${savedMessage.file_name}` : (savedMessage.message || '')),
+                            created_at: savedMessage.created_at
+                        });
+                        emitChatUnreadCount(pId);
+                    }
                 });
 
                 if (callback) callback({ status: true, message: savedMessage });
@@ -128,6 +141,7 @@ function initSocketServer(httpServer) {
                     conversation_id,
                     user_id
                 });
+                emitChatUnreadCount(user_id);
             } catch (err) {
                 console.error('[Socket] mark_read error:', err);
             }
@@ -170,24 +184,97 @@ function broadcastNoticeNotification(noticeData) {
         created_at: new Date().toISOString(),
         message: `📢 New Notice: "${noticeData.title}"`
     });
+    io.emit('notice_count_updated', { delta: 1 });
+    console.log(`[Socket] Broadcasted notice_notification and notice_count_updated for notice #${noticeData.id}`);
 }
 
 /**
- * Send Task Notification ONLY to the Assigned Admin User
+ * Send Task Notification ONLY to the Assigned Admin / Employee User
  */
 function sendTaskNotification(assignedToUserId, taskData) {
     if (!io || !assignedToUserId) return;
-    const targetRoom = `user_${parseInt(assignedToUserId)}`;
-    io.to(targetRoom).emit('task_notification', {
-        id: taskData.id,
-        title: taskData.title,
-        priority: taskData.priority || 'medium',
-        assigned_to: parseInt(assignedToUserId),
-        assigned_by_name: taskData.assigned_by_name || 'Super Admin',
-        lead_name: taskData.lead_name || null,
-        created_at: new Date().toISOString(),
-        message: `📋 New Task Assigned: "${taskData.title}"`
+    const targetUserId = parseInt(assignedToUserId);
+    const targetRoom = `user_${targetUserId}`;
+
+    const pool = require('../Connection');
+    const countSql = `
+        SELECT COUNT(*) as unread_count 
+        FROM crm_tasks 
+        WHERE assigned_to = ? AND status NOT IN ('completed', 'cancelled')
+        AND (SELECT COUNT(*) FROM crm_task_reads tr WHERE tr.task_id = crm_tasks.id AND tr.user_id = ?) = 0
+    `;
+
+    pool.query(countSql, [targetUserId, targetUserId], (err, rows) => {
+        const unreadCount = rows && rows[0] ? (parseInt(rows[0].unread_count) || 1) : 1;
+
+        const payload = {
+            id: taskData.id,
+            title: taskData.title,
+            priority: taskData.priority || 'medium',
+            assigned_to: targetUserId,
+            assigned_by_name: taskData.assigned_by_name || 'Admin',
+            lead_name: taskData.lead_name || null,
+            created_at: new Date().toISOString(),
+            active_task_count: unreadCount,
+            unread_task_count: unreadCount,
+            message: `📋 New Task Assigned: "${taskData.title}"`
+        };
+
+        io.to(targetRoom).emit('task_notification', payload);
+        io.to(targetRoom).emit('task_count_updated', {
+            user_id: targetUserId,
+            count: unreadCount
+        });
+
+        console.log(`[Socket] Dispatched task_notification and unread count (${unreadCount}) to user room: ${targetRoom}`);
     });
+}
+
+/**
+ * Emit Task Count Update to user's personal room
+ */
+function emitTaskCountUpdate(userId) {
+    if (!io || !userId) return;
+    const targetUserId = parseInt(userId);
+    const targetRoom = `user_${targetUserId}`;
+
+    const pool = require('../Connection');
+    const countSql = `
+        SELECT COUNT(*) as unread_count 
+        FROM crm_tasks 
+        WHERE assigned_to = ? AND status NOT IN ('completed', 'cancelled')
+        AND (SELECT COUNT(*) FROM crm_task_reads tr WHERE tr.task_id = crm_tasks.id AND tr.user_id = ?) = 0
+    `;
+
+    pool.query(countSql, [targetUserId, targetUserId], (err, rows) => {
+        if (!err && rows && rows[0]) {
+            const unreadCount = parseInt(rows[0].unread_count) || 0;
+            io.to(targetRoom).emit('task_count_updated', {
+                user_id: targetUserId,
+                count: unreadCount
+            });
+            console.log(`[Socket] Dispatched task_count_updated (${unreadCount}) to user room: ${targetRoom}`);
+        }
+    });
+}
+
+/**
+ * Emit Unread Chat Messages Count to a Specific User
+ */
+async function emitChatUnreadCount(userId) {
+    if (!io || !userId) return;
+    const targetUserId = parseInt(userId);
+    try {
+        const { getChatUnreadCount } = require('../model/admin/chatModel');
+        const unreadCount = await getChatUnreadCount(targetUserId);
+        io.to(`user_${targetUserId}`).emit('chat_count_updated', {
+            user_id: targetUserId,
+            unread_count: unreadCount
+        });
+        console.log(`[Socket] Dispatched chat_count_updated (${unreadCount}) to user_${targetUserId}`);
+    } catch (err) {
+        console.error(`[Socket] Error emitting chat count for user ${targetUserId}:`, err);
+    }
 }
 
 function getIO() {
@@ -198,5 +285,7 @@ module.exports = {
     initSocketServer,
     broadcastNoticeNotification,
     sendTaskNotification,
+    emitTaskCountUpdate,
+    emitChatUnreadCount,
     getIO
 };

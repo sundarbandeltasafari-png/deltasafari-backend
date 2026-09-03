@@ -1,5 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const md5 = require('md5');
+const { getFollowupsListModel } = require('../../../model/admin/crmFollowupModel');
 const { 
     getAllContactsModel,
     getAllCorporateLeadEnquiriesModel,
@@ -252,6 +253,40 @@ const getAllBookings = asyncHandler(async (req, res) => {
     }
 });
 
+// 1b. Get Combined Bookings (Package Reservations + Manual Converted Leads)
+const getCombinedBookings = asyncHandler(async (req, res) => {
+    try {
+        const reservations = await getAllBookingsAdminModel();
+        
+        let convertedLeads = [];
+        try {
+            const followupsRes = await getFollowupsListModel({
+                is_converted: 'true',
+                limit: 1000,
+                requestingUser: req.user
+            });
+            if (followupsRes && Array.isArray(followupsRes.followups)) {
+                convertedLeads = followupsRes.followups.filter(f => f.is_converted == 1);
+            }
+        } catch (fErr) {
+            console.error("Error loading converted leads for combined bookings:", fErr);
+        }
+
+        return res.status(200).json({
+            status: true,
+            msg: 'Combined bookings loaded successfully.',
+            reservations: reservations || [],
+            converted_leads: convertedLeads || [],
+            total_reservations: (reservations || []).length,
+            total_converted_leads: (convertedLeads || []).length,
+            total_combined: (reservations || []).length + (convertedLeads || []).length
+        });
+    } catch (error) {
+        console.error("Error in getCombinedBookings:", error);
+        return res.status(500).json({ status: false, msg: 'Something went wrong! Please try again later.' });
+    }
+});
+
 // 2. Get particular booking details
 const getParticularBooking = asyncHandler(async (req, res) => {
     try {
@@ -379,6 +414,7 @@ module.exports = {
     updateContactQueryAdmin,
     deleteContactQueryAdmin,
     getAllBookings,
+    getCombinedBookings,
     getParticularBooking,
     updateBooking,
     deleteBooking

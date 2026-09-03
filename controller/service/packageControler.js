@@ -375,6 +375,7 @@ const razorpayWebhook = asyncHandler(async (req, res) => {
             const orderId = paymentEntity?.order_id || event.payload?.order?.entity?.id;
             const paymentId = paymentEntity?.id;
 
+            // 1. Check Package Bookings
             if (orderId) {
                 const booking = await getBookingByRazorpayOrderIdModel(orderId);
                 if (booking && booking.payment_status !== 'PAID') {
@@ -405,6 +406,56 @@ const razorpayWebhook = asyncHandler(async (req, res) => {
                         } catch (e) {}
                     }
                 }
+            }
+
+            // 2. CRM Invoice Payment Link Auto-Reconciliation
+            const paymentLinkEntity = event.payload?.payment_link?.entity;
+            const paymentLinkId = paymentLinkEntity?.id || paymentEntity?.payment_link_id;
+            const notes = paymentLinkEntity?.notes || paymentEntity?.notes || {};
+
+            if (paymentLinkId || notes?.invoice_no || notes?.invoice_id) {
+                try {
+                    const { autoSettleInvoiceFromRazorpay } = require('../admin/invoiceModel');
+                    const paidAmt = paymentEntity?.amount || paymentLinkEntity?.amount_paid;
+                    autoSettleInvoiceFromRazorpay({
+                        paymentLinkId: paymentLinkId || paymentLinkEntity?.id,
+                        paymentId: paymentId || paymentEntity?.id,
+                        amount: paidAmt,
+                        invoiceNo: notes?.invoice_no,
+                        notes,
+                        rawEvent: event.event
+                    }).then((res) => {
+                        if (res?.success) {
+                            console.log(`[Razorpay Webhook] Successfully auto-settled CRM Invoice #${res.invoice_no} (Status: ${res.new_status})`);
+                        }
+                    }).catch(console.error);
+                } catch (settleErr) {
+                    console.error('[Razorpay Webhook] Error invoking autoSettleInvoiceFromRazorpay:', settleErr);
+                }
+            }
+        }
+
+        // 3. Handle direct payment_link.paid event
+        if (event?.event === 'payment_link.paid') {
+            const plEntity = event.payload?.payment_link?.entity;
+            const payEntity = event.payload?.payment?.entity;
+            const notes = plEntity?.notes || payEntity?.notes || {};
+            try {
+                const { autoSettleInvoiceFromRazorpay } = require('../admin/invoiceModel');
+                autoSettleInvoiceFromRazorpay({
+                    paymentLinkId: plEntity?.id,
+                    paymentId: payEntity?.id,
+                    amount: plEntity?.amount_paid || payEntity?.amount,
+                    invoiceNo: notes?.invoice_no,
+                    notes,
+                    rawEvent: 'payment_link.paid'
+                }).then((res) => {
+                    if (res?.success) {
+                        console.log(`[Razorpay Webhook] Auto-settled via payment_link.paid: Invoice #${res.invoice_no}`);
+                    }
+                }).catch(console.error);
+            } catch (plErr) {
+                console.error('[Razorpay Webhook] Error in payment_link.paid handler:', plErr);
             }
         }
 

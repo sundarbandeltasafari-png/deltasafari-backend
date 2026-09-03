@@ -449,6 +449,197 @@ function getLeadDistributionStatsModel() {
     });
 }
 
+/**
+ * Create a Manual Lead (Contact + Optional Followup + Optional Initial Message)
+ */
+function createManualLeadModel({
+    name = '',
+    phone = '',
+    email = '',
+    assigned_to = null,
+    lead_type = 'warm',
+    travel_date = null,
+    travel_destination = 'Sundarban',
+    adults = null,
+    children = null,
+    infants = null,
+    number_of_persons = 2,
+    total_rooms = 1,
+    rooms = null,
+    room_details = null,
+    package_name = '',
+    package_rate = '',
+    next_followup_date = null,
+    extra_note = '',
+    initial_message = '',
+    send_message_now = false,
+    requestingUser = null
+} = {}) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            if (!phone || !String(phone).trim()) {
+                return reject(new Error("WhatsApp phone number is required."));
+            }
+
+            let cleanPhone = String(phone).replace(/[^0-9]/g, '').trim();
+            if (!cleanPhone) {
+                return reject(new Error("A valid numeric phone number is required."));
+            }
+
+            // Auto-prefix Indian numbers if 10 digits
+            if (cleanPhone.length === 10) {
+                cleanPhone = '91' + cleanPhone;
+            }
+
+            const isSuperAdmin = requestingUser?.admin === 1;
+            const currentUserId = requestingUser?.id;
+
+            // Determine target assignment
+            let targetAssignedTo = null;
+            if (!isSuperAdmin) {
+                targetAssignedTo = currentUserId;
+            } else if (assigned_to !== undefined && assigned_to !== null && assigned_to !== '') {
+                if (assigned_to === 'unassigned') {
+                    targetAssignedTo = null;
+                } else if (assigned_to === 'auto') {
+                    targetAssignedTo = 'auto';
+                } else if (!isNaN(Number(assigned_to))) {
+                    targetAssignedTo = Number(assigned_to);
+                }
+            }
+
+            const leadName = (name && String(name).trim()) ? String(name).trim() : `Lead ${cleanPhone}`;
+
+            // Check if contact already exists
+            const existingContact = await new Promise((res, rej) => {
+                connection.query(`SELECT id, wa_id, name, assigned_to FROM whatsapp_contacts WHERE wa_id = ? LIMIT 1`, [cleanPhone], (err, rows) => {
+                    if (err) return rej(err);
+                    res(rows && rows.length > 0 ? rows[0] : null);
+                });
+            });
+
+            let contactId = null;
+            let isNewContact = false;
+
+            if (existingContact) {
+                contactId = existingContact.id;
+                let updateFields = [`updated_at = NOW()`];
+                let updateParams = [];
+
+                if (leadName && leadName !== existingContact.name && leadName !== `Lead ${cleanPhone}`) {
+                    updateFields.push(`name = ?`);
+                    updateParams.push(leadName);
+                }
+
+                if (targetAssignedTo !== 'auto' && targetAssignedTo !== undefined) {
+                    if (isSuperAdmin || !existingContact.assigned_to) {
+                        updateFields.push(`assigned_to = ?`, `assigned_at = NOW()`);
+                        updateParams.push(targetAssignedTo);
+                    }
+                }
+
+                updateParams.push(contactId);
+                await new Promise((res, rej) => {
+                    connection.query(`UPDATE whatsapp_contacts SET ${updateFields.join(', ')} WHERE id = ?`, updateParams, (err) => {
+                        if (err) return rej(err);
+                        res();
+                    });
+                });
+            } else {
+                isNewContact = true;
+                const assignedUserId = (targetAssignedTo === 'auto' || targetAssignedTo === null) ? null : targetAssignedTo;
+                const insertResult = await new Promise((res, rej) => {
+                    connection.query(
+                        `INSERT INTO whatsapp_contacts (wa_id, name, assigned_to, assigned_at, created_at, updated_at) VALUES (?, ?, ?, ${assignedUserId ? 'NOW()' : 'NULL'}, NOW(), NOW())`,
+                        [cleanPhone, leadName, assignedUserId],
+                        (err, result) => {
+                            if (err) return rej(err);
+                            res(result);
+                        }
+                    );
+                });
+                contactId = insertResult.insertId;
+
+                // If auto-assign was specified or default for super admin when assigned_to is 'auto'
+                if (targetAssignedTo === 'auto') {
+                    const autoAssignedId = await autoAssignLeadToAdmin(contactId);
+                    targetAssignedTo = autoAssignedId;
+                }
+            }
+
+            // Handle Initial Message / WhatsApp Outgoing Send
+            const messageText = (initial_message && String(initial_message).trim()) || '';
+            if (messageText) {
+                if (send_message_now) {
+                    try {
+                        const { sendWhatsAppCloudMessage } = require('../../helper/whatsappHelper');
+                        const sendRes = await sendWhatsAppCloudMessage(cleanPhone, messageText);
+                        await saveWhatsAppOutgoingMessage({
+                            contactId,
+                            messageId: sendRes.messageId || null,
+                            messageText
+                        });
+                    } catch (mErr) {
+                        console.error("[WhatsApp Send Manual Lead Message Error]:", mErr);
+                        await saveWhatsAppOutgoingMessage({
+                            contactId,
+                            messageId: null,
+                            messageText
+                        });
+                    }
+                } else {
+                    await saveWhatsAppOutgoingMessage({
+                        contactId,
+                        messageId: null,
+                        messageText
+                    });
+                }
+            }
+
+            // Save Follow-up details if provided
+            let followupData = null;
+            try {
+                const { saveLeadFollowupModel } = require('./crmFollowupModel');
+                followupData = await saveLeadFollowupModel({
+                    contact_id: contactId,
+                    lead_name: leadName,
+                    phone: cleanPhone,
+                    email: email || '',
+                    lead_type: lead_type || 'warm',
+                    travel_date: travel_date || null,
+                    travel_destination: travel_destination || 'Sundarban',
+                    adults: adults,
+                    children: children,
+                    infants: infants,
+                    number_of_persons: number_of_persons || 2,
+                    total_rooms: total_rooms || 1,
+                    rooms: rooms || room_details,
+                    room_details: rooms || room_details,
+                    package_name: package_name || '',
+                    package_rate: package_rate || '',
+                    extra_note: extra_note || (messageText ? `Initial message: ${messageText}` : 'Manual lead created'),
+                    next_followup_date: next_followup_date || null,
+                    admin_user_id: currentUserId || 1
+                });
+            } catch (fErr) {
+                console.error("[CRM Save Follow-up during manual lead creation error]:", fErr);
+            }
+
+            resolve({
+                success: true,
+                contact_id: contactId,
+                wa_id: cleanPhone,
+                name: leadName,
+                is_new: isNewContact,
+                assigned_to: targetAssignedTo,
+                followup: followupData
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
 module.exports = {
     upsertWhatsAppContact,
     saveWhatsAppIncomingMessage,
@@ -461,5 +652,6 @@ module.exports = {
     manuallyAssignLeadModel,
     getLeadDistributionStatsModel,
     autoAssignLeadToAdmin,
-    maskPhoneNumber
+    maskPhoneNumber,
+    createManualLeadModel
 };

@@ -448,6 +448,25 @@ function getConversationParticipants(conversationId) {
     });
 }
 
+/**
+ * Get Total Unread Messages Count for a User across all chats
+ */
+function getChatUnreadCount(userId) {
+    return new Promise((resolve, reject) => {
+        const uId = parseInt(userId);
+        const sql = `
+            SELECT COUNT(*) as total_unread
+            FROM crm_chat_messages m
+            JOIN crm_chat_participants p ON p.conversation_id = m.conversation_id AND p.user_id = ?
+            WHERE m.sender_id != ? AND m.created_at > COALESCE(p.last_read_at, '2000-01-01')
+        `;
+        connection.query(sql, [uId, uId], (err, rows) => {
+            if (err) return reject(err);
+            resolve(parseInt(rows && rows[0] ? rows[0].total_unread : 0));
+        });
+    });
+}
+
 module.exports = {
     initChatTables,
     getOrCreateDirectConversation,
@@ -456,5 +475,6 @@ module.exports = {
     getConversationMessages,
     saveMessage,
     markConversationRead,
-    getConversationParticipants
+    getConversationParticipants,
+    getChatUnreadCount
 };

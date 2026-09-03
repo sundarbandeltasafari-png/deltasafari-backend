@@ -45,12 +45,28 @@ function initTaskTables() {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `;
 
+    const createTaskReadsTable = `
+        CREATE TABLE IF NOT EXISTS crm_task_reads (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            task_id INT NOT NULL,
+            user_id INT NOT NULL,
+            read_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_user_task (user_id, task_id),
+            INDEX idx_task_id (task_id),
+            INDEX idx_user_id (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `;
+
     connection.query(createTasksTable, (err) => {
         if (err) console.error('[TaskModel] Error creating crm_tasks table:', err);
     });
 
     connection.query(createActivitiesTable, (err) => {
         if (err) console.error('[TaskModel] Error creating crm_task_activities table:', err);
+    });
+
+    connection.query(createTaskReadsTable, (err) => {
+        if (err) console.error('[TaskModel] Error creating crm_task_reads table:', err);
     });
 }
 
@@ -222,6 +238,7 @@ function getTasksList(filters = {}, currentUser = {}) {
         const sql = `
             SELECT 
                 t.*,
+                CASE WHEN tr.id IS NOT NULL THEN 1 ELSE 0 END as is_read,
                 u_assign.first_name as assignee_first_name,
                 u_assign.last_name as assignee_last_name,
                 u_assign.email as assignee_email,
@@ -229,6 +246,7 @@ function getTasksList(filters = {}, currentUser = {}) {
                 u_create.first_name as creator_first_name,
                 u_create.last_name as creator_last_name
             FROM crm_tasks t
+            LEFT JOIN crm_task_reads tr ON tr.task_id = t.id AND tr.user_id = ?
             LEFT JOIN user_master u_assign ON u_assign.id = t.assigned_to
             LEFT JOIN user_master u_create ON u_create.id = t.created_by
             WHERE ${whereSql}
@@ -243,7 +261,7 @@ function getTasksList(filters = {}, currentUser = {}) {
                 t.id DESC
         `;
 
-        connection.query(sql, params, (err, rows) => {
+        connection.query(sql, [currentUser.id || 0, ...params], (err, rows) => {
             if (err) return reject(err);
             const tasks = JSON.parse(JSON.stringify(rows || [])).map(t => {
                 try {
@@ -254,6 +272,20 @@ function getTasksList(filters = {}, currentUser = {}) {
                 return t;
             });
             resolve(tasks);
+        });
+    });
+}
+
+/**
+ * Mark Task As Read for a User
+ */
+function markTaskAsRead(taskId, userId) {
+    return new Promise((resolve, reject) => {
+        if (!taskId || !userId) return resolve(false);
+        const sql = `INSERT IGNORE INTO crm_task_reads (task_id, user_id, read_at) VALUES (?, ?, NOW())`;
+        connection.query(sql, [taskId, userId], (err) => {
+            if (err) console.error('[TaskModel] markTaskAsRead error:', err);
+            resolve(true);
         });
     });
 }
@@ -275,6 +307,7 @@ function getTaskById(taskId, currentUser = {}) {
         const sql = `
             SELECT 
                 t.*,
+                CASE WHEN tr.id IS NOT NULL THEN 1 ELSE 0 END as is_read,
                 u_assign.first_name as assignee_first_name,
                 u_assign.last_name as assignee_last_name,
                 u_assign.email as assignee_email,
@@ -282,12 +315,13 @@ function getTaskById(taskId, currentUser = {}) {
                 u_create.first_name as creator_first_name,
                 u_create.last_name as creator_last_name
             FROM crm_tasks t
+            LEFT JOIN crm_task_reads tr ON tr.task_id = t.id AND tr.user_id = ?
             LEFT JOIN user_master u_assign ON u_assign.id = t.assigned_to
             LEFT JOIN user_master u_create ON u_create.id = t.created_by
             WHERE ${whereClauses.join(' AND ')}
         `;
 
-        connection.query(sql, params, (err, rows) => {
+        connection.query(sql, [currentUser.id || 0, ...params], (err, rows) => {
             if (err) return reject(err);
             if (!rows || rows.length === 0) return resolve(null);
             const task = JSON.parse(JSON.stringify(rows[0]));
@@ -296,6 +330,12 @@ function getTaskById(taskId, currentUser = {}) {
             } catch (e) {
                 task.checklists = [];
             }
+
+            // Auto mark as read for this user
+            if (currentUser?.id) {
+                markTaskAsRead(taskId, currentUser.id).catch(() => {});
+            }
+
             resolve(task);
         });
     });
@@ -313,8 +353,14 @@ function updateTaskStatus(taskId, status, userId, currentUser = {}) {
             if (!rows || rows.length === 0) return reject(new Error("Task not found."));
 
             const task = rows[0];
-            if (currentUser.admin !== 1 && task.assigned_to !== currentUser.id) {
+            const isAdmin = Number(currentUser.admin) === 1 || Number(currentUser.admin) === 2;
+
+            if (!isAdmin && task.assigned_to !== currentUser.id) {
                 return reject(new Error("Permission denied: You can only update tasks assigned to you."));
+            }
+
+            if (status === 'completed' && !isAdmin) {
+                return reject(new Error("Permission denied: Employees cannot complete tasks. Only an Administrator can mark a task as completed."));
             }
 
             const completedAtSql = status === 'completed' ? ', completed_at = NOW()' : ', completed_at = NULL';
@@ -345,15 +391,21 @@ function updateTask(taskId, data, userId, currentUser = {}) {
             if (!rows || rows.length === 0) return reject(new Error("Task not found."));
 
             const task = rows[0];
-            if (currentUser.admin !== 1 && task.assigned_to !== currentUser.id) {
+            const isAdmin = Number(currentUser.admin) === 1 || Number(currentUser.admin) === 2;
+
+            if (!isAdmin && task.assigned_to !== currentUser.id) {
                 return reject(new Error("Permission denied: You can only edit tasks assigned to you."));
+            }
+
+            if (data.status === 'completed' && !isAdmin) {
+                return reject(new Error("Permission denied: Employees cannot complete tasks. Only an Administrator can mark a task as completed."));
             }
 
             const checklists = Array.isArray(data.checklists) ? JSON.stringify(data.checklists) : (data.checklists_json ? JSON.stringify(data.checklists_json) : null);
             const completedAtSql = data.status === 'completed' ? ', completed_at = COALESCE(completed_at, NOW())' : (data.status ? ', completed_at = NULL' : '');
 
-            // Regular admin user cannot reassign task to someone else
-            const assignedToVal = currentUser.admin === 1 ? (data.assigned_to || null) : task.assigned_to;
+            // Regular employee user cannot reassign task to someone else
+            const assignedToVal = isAdmin ? (data.assigned_to || null) : task.assigned_to;
 
             const updateSql = `
                 UPDATE crm_tasks SET
@@ -495,12 +547,13 @@ function getTaskStats(currentUser = {}) {
                 SUM(CASE WHEN status != 'completed' AND status != 'cancelled' AND due_date < CURDATE() THEN 1 ELSE 0 END) as overdue_count,
                 SUM(CASE WHEN status != 'completed' AND status != 'cancelled' AND due_date = CURDATE() THEN 1 ELSE 0 END) as due_today_count,
                 SUM(CASE WHEN assigned_to = ? THEN 1 ELSE 0 END) as assigned_to_me_count,
-                SUM(CASE WHEN priority = 'urgent' AND status != 'completed' THEN 1 ELSE 0 END) as urgent_count
+                SUM(CASE WHEN priority = 'urgent' AND status != 'completed' THEN 1 ELSE 0 END) as urgent_count,
+                SUM(CASE WHEN status != 'completed' AND status != 'cancelled' AND (SELECT COUNT(*) FROM crm_task_reads tr WHERE tr.task_id = crm_tasks.id AND tr.user_id = ?) = 0 THEN 1 ELSE 0 END) as unread_count
             FROM crm_tasks
             WHERE ${whereSql}
         `;
 
-        connection.query(sql, [currentUser.id || 0, ...params], (err, rows) => {
+        connection.query(sql, [currentUser.id || 0, currentUser.id || 0, ...params], (err, rows) => {
             if (err) return reject(err);
             const stats = rows && rows[0] ? rows[0] : {};
             resolve({
@@ -512,7 +565,8 @@ function getTaskStats(currentUser = {}) {
                 overdue_count: parseInt(stats.overdue_count || 0),
                 due_today_count: parseInt(stats.due_today_count || 0),
                 assigned_to_me_count: parseInt(stats.assigned_to_me_count || 0),
-                urgent_count: parseInt(stats.urgent_count || 0)
+                urgent_count: parseInt(stats.urgent_count || 0),
+                unread_count: parseInt(stats.unread_count || 0)
             });
         });
     });
@@ -524,6 +578,7 @@ module.exports = {
     createTask,
     getTasksList,
     getTaskById,
+    markTaskAsRead,
     updateTaskStatus,
     updateTask,
     deleteTask,

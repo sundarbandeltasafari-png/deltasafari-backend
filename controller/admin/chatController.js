@@ -9,9 +9,10 @@ const {
     getConversationMessages,
     saveMessage,
     markConversationRead,
-    getConversationParticipants
+    getConversationParticipants,
+    getChatUnreadCount
 } = require('../../model/admin/chatModel');
-const { getIO } = require('../../socket/chatSocket');
+const { getIO, emitChatUnreadCount } = require('../../socket/chatSocket');
 
 // Ensure upload directory exists
 const chatUploadDir = path.join(__dirname, '../../uploads/chat');
@@ -139,6 +140,18 @@ const sendMessageHandler = asyncHandler(async (req, res) => {
                     sender_first_name: savedMessage.sender_first_name,
                     message: savedMessage
                 });
+
+                if (pId !== parseInt(currentUserId)) {
+                    io.to(`user_${pId}`).emit('chat_notification', {
+                        id: savedMessage.id,
+                        conversation_id: conversationId,
+                        sender_id: currentUserId,
+                        sender_name: `${savedMessage.sender_first_name || 'Staff'} ${savedMessage.sender_last_name || ''}`.trim(),
+                        message: savedMessage.message_type === 'image' ? '📷 Sent an image' : (savedMessage.message_type === 'file' ? `📎 Sent a file: ${savedMessage.file_name}` : (savedMessage.message || '')),
+                        created_at: savedMessage.created_at
+                    });
+                    emitChatUnreadCount(pId);
+                }
             });
         }
 
@@ -193,10 +206,26 @@ const markReadHandler = asyncHandler(async (req, res) => {
         const currentUserId = req.user?.id || 1;
 
         await markConversationRead(conversationId, currentUserId);
+        emitChatUnreadCount(currentUserId);
         res.status(200).json({ status: true, msg: 'Conversation marked as read.' });
     } catch (err) {
         console.error('[ChatController] markRead error:', err);
         res.status(500).json({ status: false, msg: err.message || 'Error marking as read.' });
+    }
+});
+
+/**
+ * @desc Get total unread chat messages count for current user
+ * @route GET /admin/crm/chat/unread-count
+ */
+const getChatUnreadCountHandler = asyncHandler(async (req, res) => {
+    try {
+        const currentUserId = req.user?.id || 1;
+        const unreadCount = await getChatUnreadCount(currentUserId);
+        res.status(200).json({ status: true, unread_count: unreadCount });
+    } catch (err) {
+        console.error('[ChatController] getChatUnreadCount error:', err);
+        res.status(500).json({ status: false, msg: err.message || 'Error fetching unread chat count.' });
     }
 });
 
@@ -207,5 +236,6 @@ module.exports = {
     getConversationMessagesHandler,
     sendMessageHandler,
     uploadChatFileHandler,
-    markReadHandler
+    markReadHandler,
+    getChatUnreadCountHandler
 };
