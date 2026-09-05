@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon server.js"
+    "start": "nodemon server.js",
+    "clean:crm": "node clean_crm_demo_data.js"
   },
   "author": "Kaushik Mahata",
   "license": "ISC",

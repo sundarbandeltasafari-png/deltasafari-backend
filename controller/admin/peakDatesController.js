@@ -32,6 +32,10 @@ const getPeakDates = asyncHandler(async (req, res) => {
  */
 const createPeakDate = asyncHandler(async (req, res) => {
     try {
+        if (req.user?.admin !== 1) {
+            return res.status(403).json({ status: false, msg: 'Only administrators can mark peak dates. Employees do not have permission.' });
+        }
+
         const {
             title,
             start_date,
@@ -86,6 +90,10 @@ const createPeakDate = asyncHandler(async (req, res) => {
  */
 const updatePeakDate = asyncHandler(async (req, res) => {
     try {
+        if (req.user?.admin !== 1) {
+            return res.status(403).json({ status: false, msg: 'Only administrators can update peak dates. Employees do not have permission.' });
+        }
+
         const id = parseInt(req.params.id);
         const {
             title,
@@ -140,6 +148,10 @@ const updatePeakDate = asyncHandler(async (req, res) => {
  * @route DELETE /admin/crm/peak-dates/:id
  */
 const deletePeakDate = asyncHandler(async (req, res) => {
+    if (req.user?.admin !== 1) {
+        return res.status(403).json({ status: false, msg: 'Only administrators can remove peak dates. Employees do not have permission.' });
+    }
+
     const id = req.params.id;
 
     await deletePeakDateModel(id);

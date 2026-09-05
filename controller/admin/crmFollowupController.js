@@ -23,6 +23,7 @@ const saveLeadFollowup = asyncHandler(async (req, res, next) => {
             email,
             lead_type,
             travel_date,
+            booking_days,
             travel_destination,
             adults,
             children,
@@ -68,6 +69,7 @@ const saveLeadFollowup = asyncHandler(async (req, res, next) => {
             email,
             lead_type,
             travel_date,
+            booking_days,
             travel_destination,
             adults,
             children,
@@ -102,9 +104,11 @@ const markLeadConverted = asyncHandler(async (req, res, next) => {
         const {
             contact_id,
             converted_amount,
+            extra_discount,
             package_name,
             conversion_note,
             travel_date,
+            booking_days,
             adults,
             children,
             infants,
@@ -141,9 +145,11 @@ const markLeadConverted = asyncHandler(async (req, res, next) => {
         const result = await markLeadConvertedModel({
             contact_id: Number(contact_id),
             converted_amount,
+            extra_discount,
             package_name,
             conversion_note,
             travel_date,
+            booking_days,
             adults,
             children,
             infants,
@@ -223,6 +229,8 @@ const getFollowupsList = asyncHandler(async (req, res, next) => {
         const to_date = req.query.to_date || '';
         const date_filter_type = req.query.date_filter_type || 'next_followup';
         const assigned_to = req.query.assigned_to || '';
+        const sort_by = req.query.sort_by || req.query.sort || '';
+        const sort_order = req.query.sort_order || req.query.order || '';
 
         const result = await getFollowupsListModel({
             page,
@@ -236,6 +244,8 @@ const getFollowupsList = asyncHandler(async (req, res, next) => {
             to_date,
             date_filter_type,
             assigned_to,
+            sort_by,
+            sort_order,
             requestingUser: req.user
         });
 

@@ -8,7 +8,8 @@ const {
     toggleLeadManagerStatusModel,
     manuallyAssignLeadModel,
     getLeadDistributionStatsModel,
-    createManualLeadModel
+    createManualLeadModel,
+    deleteWhatsAppContactModel
 } = require('../../model/admin/whatsappModel');
 const { sendWhatsAppCloudMessage, normalizePhoneNumber } = require('../../helper/whatsappHelper');
 
@@ -17,7 +18,7 @@ const { sendWhatsAppCloudMessage, normalizePhoneNumber } = require('../../helper
  */
 const getContacts = async (req, res) => {
     try {
-        const { search = '', page = 1, limit = 50, assigned_to = '' } = req.query;
+        const { search = '', page = 1, limit = 50, assigned_to = '', lead_source = '' } = req.query;
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
         const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 50));
         const offset = (pageNum - 1) * limitNum;
@@ -27,7 +28,8 @@ const getContacts = async (req, res) => {
             limit: limitNum,
             offset,
             requestingUser: req.user,
-            assignedToFilter: assigned_to
+            assignedToFilter: assigned_to,
+            leadSourceFilter: lead_source
         });
 
         return res.status(200).json({
@@ -279,6 +281,7 @@ const createManualLead = async (req, res) => {
             assigned_to,
             lead_type,
             travel_date,
+            booking_days,
             travel_destination,
             adults,
             children,
@@ -306,6 +309,7 @@ const createManualLead = async (req, res) => {
             assigned_to,
             lead_type,
             travel_date,
+            booking_days,
             travel_destination,
             adults,
             children,
@@ -334,6 +338,39 @@ const createManualLead = async (req, res) => {
     }
 };
 
+/**
+ * Delete WhatsApp Lead / Contact (Admin / Super Admin Only)
+ */
+const deleteContact = async (req, res) => {
+    try {
+        if (req.user?.admin !== 1) {
+            return res.status(403).json({
+                status: false,
+                msg: 'Access Denied: Only administrators have permission to delete WhatsApp leads.'
+            });
+        }
+
+        const contactId = req.params.contactId || req.body.contact_id;
+        if (!contactId) {
+            return res.status(400).json({ status: false, msg: 'Contact ID is required.' });
+        }
+
+        const result = await deleteWhatsAppContactModel(contactId);
+        if (result.notFound) {
+            return res.status(404).json({ status: false, msg: 'WhatsApp lead not found or already deleted.' });
+        }
+
+        return res.status(200).json({
+            status: true,
+            msg: `WhatsApp lead "${result.contact?.name || result.contact?.wa_id}" deleted successfully.`,
+            data: result.contact
+        });
+    } catch (error) {
+        console.error('[Admin WhatsApp deleteContact Error]:', error);
+        return res.status(500).json({ status: false, msg: error.message || 'Failed to delete WhatsApp lead.' });
+    }
+};
+
 module.exports = {
     getContacts,
     getMessages,
@@ -343,6 +380,7 @@ module.exports = {
     getLeadManagers,
     toggleLeadManager,
     assignLead,
-    createManualLead
+    createManualLead,
+    deleteContact
 };
 

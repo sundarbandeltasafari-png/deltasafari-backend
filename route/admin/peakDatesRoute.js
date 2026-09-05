@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { adminAuthMiddleWare } = require('../../middleware/middleware');
+const { adminAuthMiddleWare, superAdminAuthMiddleWare } = require('../../middleware/middleware');
 const {
     getPeakDates,
     createPeakDate,
@@ -10,13 +10,13 @@ const {
 
 router.route('/')
     .get(adminAuthMiddleWare, getPeakDates)
-    .post(adminAuthMiddleWare, createPeakDate);
+    .post(superAdminAuthMiddleWare, createPeakDate);
 
 router.route('/:id')
     .get(adminAuthMiddleWare, getPeakDates)
-    .put(adminAuthMiddleWare, updatePeakDate)
-    .post(adminAuthMiddleWare, updatePeakDate)
-    .patch(adminAuthMiddleWare, updatePeakDate)
-    .delete(adminAuthMiddleWare, deletePeakDate);
+    .put(superAdminAuthMiddleWare, updatePeakDate)
+    .post(superAdminAuthMiddleWare, updatePeakDate)
+    .patch(superAdminAuthMiddleWare, updatePeakDate)
+    .delete(superAdminAuthMiddleWare, deletePeakDate);
 
 module.exports = router;

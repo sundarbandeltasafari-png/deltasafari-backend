@@ -62,7 +62,7 @@ function upsertWhatsAppContact(waId, name) {
         const cleanWaId = String(waId).replace(/[^0-9]/g, '').trim() || String(waId).trim();
         const contactName = (name && String(name).trim() && String(name).trim() !== cleanWaId) ? String(name).trim() : `Lead ${cleanWaId}`;
 
-        const selectSql = `SELECT id, wa_id, name, assigned_to FROM whatsapp_contacts WHERE wa_id = ? LIMIT 1`;
+        const selectSql = `SELECT id, wa_id, name, assigned_to, COALESCE(lead_source, 'whatsapp') AS lead_source FROM whatsapp_contacts WHERE wa_id = ? LIMIT 1`;
         connection.query(selectSql, [cleanWaId], (err, rows) => {
             if (err) return reject(err);
 
@@ -73,20 +73,20 @@ function upsertWhatsAppContact(waId, name) {
                     const updateSql = `UPDATE whatsapp_contacts SET name = ?, updated_at = NOW() WHERE id = ?`;
                     connection.query(updateSql, [contactName, contact.id], (uErr) => {
                         if (uErr) console.error("Error updating contact name:", uErr);
-                        resolve({ id: contact.id, wa_id: contact.wa_id, name: contactName || contact.name, is_new: false, assigned_to: contact.assigned_to });
+                        resolve({ id: contact.id, wa_id: contact.wa_id, name: contactName || contact.name, lead_source: contact.lead_source || 'whatsapp', is_new: false, assigned_to: contact.assigned_to });
                     });
                 } else {
                     const touchSql = `UPDATE whatsapp_contacts SET updated_at = NOW() WHERE id = ?`;
                     connection.query(touchSql, [contact.id], () => {});
-                    resolve({ id: contact.id, wa_id: contact.wa_id, name: contact.name, is_new: false, assigned_to: contact.assigned_to });
+                    resolve({ id: contact.id, wa_id: contact.wa_id, name: contact.name, lead_source: contact.lead_source || 'whatsapp', is_new: false, assigned_to: contact.assigned_to });
                 }
             } else {
-                const insertSql = `INSERT INTO whatsapp_contacts (wa_id, name, created_at, updated_at) VALUES (?, ?, NOW(), NOW())`;
+                const insertSql = `INSERT INTO whatsapp_contacts (wa_id, name, lead_source, created_at, updated_at) VALUES (?, ?, 'whatsapp', NOW(), NOW())`;
                 connection.query(insertSql, [cleanWaId, contactName], async (iErr, result) => {
                     if (iErr) return reject(iErr);
                     const newContactId = result.insertId;
                     const assignedUserId = await autoAssignLeadToAdmin(newContactId);
-                    resolve({ id: newContactId, wa_id: cleanWaId, name: contactName, is_new: true, assigned_to: assignedUserId });
+                    resolve({ id: newContactId, wa_id: cleanWaId, name: contactName, lead_source: 'whatsapp', is_new: true, assigned_to: assignedUserId });
                 });
             }
         });
@@ -162,7 +162,7 @@ function saveWhatsAppOutgoingMessage({ contactId, messageId, messageText }) {
 /**
  * Get contacts list for CRM with last message, message counts, and role-based assignment filtering
  */
-function getWhatsAppContactsList({ search = '', limit = 50, offset = 0, requestingUser = null, assignedToFilter = '' } = {}) {
+function getWhatsAppContactsList({ search = '', limit = 50, offset = 0, requestingUser = null, assignedToFilter = '', leadSourceFilter = '' } = {}) {
     return new Promise((resolve, reject) => {
         const isSuperAdmin = requestingUser?.admin === 1;
         const currentUserId = requestingUser?.id;
@@ -184,7 +184,16 @@ function getWhatsAppContactsList({ search = '', limit = 50, offset = 0, requesti
             }
         }
 
-        // 2. Search query filter
+        // 2. Lead Source filter (custom vs whatsapp lead)
+        if (leadSourceFilter) {
+            if (leadSourceFilter === 'custom') {
+                conditions.push(`c.lead_source = 'custom'`);
+            } else if (leadSourceFilter === 'whatsapp') {
+                conditions.push(`(c.lead_source = 'whatsapp' OR c.lead_source IS NULL)`);
+            }
+        }
+
+        // 3. Search query filter
         if (search && search.trim() !== '') {
             const term = `%${search.trim()}%`;
             conditions.push(`(c.name LIKE ? OR c.wa_id LIKE ? OR m_last.message_text LIKE ?)`);
@@ -198,6 +207,7 @@ function getWhatsAppContactsList({ search = '', limit = 50, offset = 0, requesti
                 c.id,
                 c.wa_id,
                 c.name,
+                COALESCE(c.lead_source, 'whatsapp') AS lead_source,
                 c.assigned_to,
                 c.assigned_at,
                 CONCAT(u.first_name, ' ', COALESCE(u.last_name, '')) AS assigned_user_name,
@@ -275,6 +285,7 @@ function getWhatsAppMessagesHistory(contactId, requestingUser = null) {
                 c.id, 
                 c.wa_id, 
                 c.name, 
+                COALESCE(c.lead_source, 'whatsapp') AS lead_source,
                 c.assigned_to,
                 c.assigned_at,
                 CONCAT(u.first_name, ' ', COALESCE(u.last_name, '')) AS assigned_user_name,
@@ -341,6 +352,8 @@ function getWhatsAppCRMStats(requestingUser = null) {
         const statsSql = `
             SELECT 
                 (SELECT COUNT(*) FROM whatsapp_contacts ${contactCondition}) AS total_contacts,
+                (SELECT COUNT(*) FROM whatsapp_contacts ${contactCondition ? `${contactCondition} AND (lead_source = 'whatsapp' OR lead_source IS NULL)` : "WHERE (lead_source = 'whatsapp' OR lead_source IS NULL)"}) AS total_whatsapp_leads,
+                (SELECT COUNT(*) FROM whatsapp_contacts ${contactCondition ? `${contactCondition} AND lead_source = 'custom'` : "WHERE lead_source = 'custom'"}) AS total_custom_leads,
                 (SELECT COUNT(*) FROM whatsapp_messages ${messageCondition}) AS total_messages,
                 (SELECT COUNT(*) FROM whatsapp_messages ${isSuperAdmin ? "WHERE sender_type = 'customer'" : `${messageCondition} AND whatsapp_messages.sender_type = 'customer'`}) AS total_inbound,
                 (SELECT COUNT(*) FROM whatsapp_messages ${isSuperAdmin ? "WHERE sender_type = 'business'" : `${messageCondition} AND whatsapp_messages.sender_type = 'business'`}) AS total_outbound,
@@ -348,7 +361,7 @@ function getWhatsAppCRMStats(requestingUser = null) {
         `;
         connection.query(statsSql, (err, rows) => {
             if (err) return reject(err);
-            resolve(rows && rows[0] ? rows[0] : { total_contacts: 0, total_messages: 0, total_inbound: 0, total_outbound: 0, today_messages: 0 });
+            resolve(rows && rows[0] ? rows[0] : { total_contacts: 0, total_whatsapp_leads: 0, total_custom_leads: 0, total_messages: 0, total_inbound: 0, total_outbound: 0, today_messages: 0 });
         });
     });
 }
@@ -459,6 +472,7 @@ function createManualLeadModel({
     assigned_to = null,
     lead_type = 'warm',
     travel_date = null,
+    booking_days = 1,
     travel_destination = 'Sundarban',
     adults = null,
     children = null,
@@ -512,7 +526,7 @@ function createManualLeadModel({
 
             // Check if contact already exists
             const existingContact = await new Promise((res, rej) => {
-                connection.query(`SELECT id, wa_id, name, assigned_to FROM whatsapp_contacts WHERE wa_id = ? LIMIT 1`, [cleanPhone], (err, rows) => {
+                connection.query(`SELECT id, wa_id, name, assigned_to, lead_source FROM whatsapp_contacts WHERE wa_id = ? LIMIT 1`, [cleanPhone], (err, rows) => {
                     if (err) return rej(err);
                     res(rows && rows.length > 0 ? rows[0] : null);
                 });
@@ -525,6 +539,10 @@ function createManualLeadModel({
                 contactId = existingContact.id;
                 let updateFields = [`updated_at = NOW()`];
                 let updateParams = [];
+
+                if (!existingContact.lead_source) {
+                    updateFields.push(`lead_source = 'custom'`);
+                }
 
                 if (leadName && leadName !== existingContact.name && leadName !== `Lead ${cleanPhone}`) {
                     updateFields.push(`name = ?`);
@@ -550,7 +568,7 @@ function createManualLeadModel({
                 const assignedUserId = (targetAssignedTo === 'auto' || targetAssignedTo === null) ? null : targetAssignedTo;
                 const insertResult = await new Promise((res, rej) => {
                     connection.query(
-                        `INSERT INTO whatsapp_contacts (wa_id, name, assigned_to, assigned_at, created_at, updated_at) VALUES (?, ?, ?, ${assignedUserId ? 'NOW()' : 'NULL'}, NOW(), NOW())`,
+                        `INSERT INTO whatsapp_contacts (wa_id, name, lead_source, assigned_to, assigned_at, created_at, updated_at) VALUES (?, ?, 'custom', ?, ${assignedUserId ? 'NOW()' : 'NULL'}, NOW(), NOW())`,
                         [cleanPhone, leadName, assignedUserId],
                         (err, result) => {
                             if (err) return rej(err);
@@ -607,6 +625,7 @@ function createManualLeadModel({
                     email: email || '',
                     lead_type: lead_type || 'warm',
                     travel_date: travel_date || null,
+                    booking_days: booking_days || 1,
                     travel_destination: travel_destination || 'Sundarban',
                     adults: adults,
                     children: children,
@@ -640,6 +659,81 @@ function createManualLeadModel({
     });
 }
 
+/**
+ * Delete WhatsApp Contact / Lead and all associated CRM records
+ * @param {number|string} contactId
+ * @returns {Promise<{success: boolean, notFound?: boolean, contact?: object}>}
+ */
+function deleteWhatsAppContactModel(contactId) {
+    return new Promise((resolve, reject) => {
+        if (!contactId) return reject(new Error("Contact ID is required."));
+
+        const cleanId = parseInt(contactId, 10);
+        if (isNaN(cleanId) || cleanId <= 0) {
+            return reject(new Error("Invalid Contact ID."));
+        }
+
+        // 1. Check if contact exists
+        connection.query(`SELECT id, wa_id, name, assigned_to FROM whatsapp_contacts WHERE id = ? LIMIT 1`, [cleanId], async (err, rows) => {
+            if (err) return reject(err);
+            if (!rows || rows.length === 0) {
+                return resolve({ success: false, notFound: true });
+            }
+
+            const contact = rows[0];
+
+            // Helper to execute query safely ignoring errors if table/column does not exist
+            const safeQuery = (sql, params = []) => {
+                return new Promise((res) => {
+                    connection.query(sql, params, (qErr) => {
+                        if (qErr) {
+                            console.warn(`[Safe Delete Notice] ${sql.substring(0, 40)}...:`, qErr.message);
+                        }
+                        res();
+                    });
+                });
+            };
+
+            try {
+                // Delete messages
+                await safeQuery(`DELETE FROM whatsapp_messages WHERE contact_id = ?`, [cleanId]);
+
+                // Delete followup logs
+                await safeQuery(`DELETE FROM crm_lead_followup_logs WHERE contact_id = ?`, [cleanId]);
+
+                // Delete followups
+                await safeQuery(`DELETE FROM crm_lead_followups WHERE contact_id = ?`, [cleanId]);
+
+                // Delete lead notes
+                await safeQuery(`DELETE FROM crm_lead_notes WHERE contact_id = ?`, [cleanId]);
+
+                // Delete tasks associated with this lead
+                await safeQuery(`DELETE FROM crm_tasks WHERE lead_contact_id = ?`, [cleanId]);
+
+                // Nullify contact_id in invoices so billing records remain intact
+                await safeQuery(`UPDATE crm_invoices SET contact_id = NULL WHERE contact_id = ?`, [cleanId]);
+
+                // Delete campaign recipients
+                await safeQuery(`DELETE FROM whatsapp_campaign_recipients WHERE contact_id = ?`, [cleanId]);
+
+                // Finally delete contact itself
+                connection.query(`DELETE FROM whatsapp_contacts WHERE id = ?`, [cleanId], async (delErr) => {
+                    if (delErr) return reject(delErr);
+
+                    // Decrement staff lead distribution counter if assigned
+                    if (contact.assigned_to) {
+                        await safeQuery(`UPDATE crm_lead_distribution_settings SET leads_count = GREATEST(0, leads_count - 1) WHERE user_id = ?`, [contact.assigned_to]);
+                    }
+
+                    resolve({ success: true, contact });
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
+    });
+}
+
 module.exports = {
     upsertWhatsAppContact,
     saveWhatsAppIncomingMessage,
@@ -653,5 +747,6 @@ module.exports = {
     getLeadDistributionStatsModel,
     autoAssignLeadToAdmin,
     maskPhoneNumber,
-    createManualLeadModel
+    createManualLeadModel,
+    deleteWhatsAppContactModel
 };

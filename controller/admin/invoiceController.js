@@ -16,7 +16,8 @@ const {
     sendInvoiceWhatsAppModel,
     generateInvoicePaymentLinkModel,
     updateInvoicePaymentStatusModel,
-    getInvoicePaymentsHistoryModel
+    getInvoicePaymentsHistoryModel,
+    getInvoicesByContactModel
 } = require('../../model/admin/invoiceModel');
 const path = require('path');
 const fs = require('fs');
@@ -388,6 +389,21 @@ const getBillingStats = asyncHandler(async (req, res) => {
     });
 });
 
+/**
+ * @desc Get All Invoices & Complete Payment Timings for a Lead / Contact
+ * @route GET /admin/crm/invoices/by-contact/:contactId
+ */
+const getInvoicesByContact = asyncHandler(async (req, res) => {
+    const { contactId } = req.params;
+    const { phone } = req.query;
+    const data = await getInvoicesByContactModel(contactId, phone);
+    res.status(200).json({
+        status: true,
+        ...data,
+        msg: 'Invoices and payment history for contact fetched successfully.'
+    });
+});
+
 module.exports = {
     getInvoiceConfig,
     updateInvoiceConfig,
@@ -406,5 +422,6 @@ module.exports = {
     syncInvoicePaymentStatus,
     uploadInvoiceProof,
     updateInvoicePaymentStatus,
-    getInvoicePaymentsHistory
+    getInvoicePaymentsHistory,
+    getInvoicesByContact
 };

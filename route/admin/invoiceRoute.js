@@ -19,7 +19,8 @@ const {
     syncInvoicePaymentStatus,
     uploadInvoiceProof,
     updateInvoicePaymentStatus,
-    getInvoicePaymentsHistory
+    getInvoicePaymentsHistory,
+    getInvoicesByContact
 } = require('../../controller/admin/invoiceController');
 
 // Configuration: All admin users can view config (needed for invoice generation/preview), but only Super Admin can update
@@ -38,6 +39,7 @@ router.post('/upload-proof', adminAuthMiddleWare, uploadInvoiceProof);
 // Invoices & Billing: Accessible to all admin users
 router.get('/next-number', adminAuthMiddleWare, getNextInvoiceNumber);
 router.get('/stats', adminAuthMiddleWare, getBillingStats);
+router.get('/by-contact/:contactId', adminAuthMiddleWare, getInvoicesByContact);
 router.get('/', adminAuthMiddleWare, getInvoicesList);
 router.post('/', adminAuthMiddleWare, createInvoice);
 router.get('/:id', adminAuthMiddleWare, getInvoiceDetails);

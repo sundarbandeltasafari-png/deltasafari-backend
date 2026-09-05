@@ -408,6 +408,14 @@ const runMigrations = () => {
         `;
         connection.query(createWhatsAppContactsTable, (err) => {
             if (err) console.error("Error creating whatsapp_contacts table:", err.message);
+
+            connection.query(`SHOW COLUMNS FROM whatsapp_contacts LIKE 'lead_source'`, (cErr, rows) => {
+                if (!cErr && rows && rows.length === 0) {
+                    connection.query(`ALTER TABLE whatsapp_contacts ADD COLUMN lead_source VARCHAR(20) DEFAULT 'whatsapp', ADD INDEX idx_lead_source (lead_source)`, (aErr) => {
+                        if (aErr) console.error("Error adding lead_source to whatsapp_contacts:", aErr.message);
+                    });
+                }
+            });
         });
 
         const createWhatsAppMessagesTable = `

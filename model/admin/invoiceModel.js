@@ -100,6 +100,7 @@ function initInvoiceTables() {
             const configCols = [
                 { name: 'razorpay_key_id', type: "VARCHAR(255) DEFAULT 'rzp_test_RQWjJm9q5lEiA8'" },
                 { name: 'razorpay_key_secret', type: "VARCHAR(255) DEFAULT 'XwAWgPdeymk9XLHqndmSD27c'" },
+                { name: 'razorpay_webhook_secret', type: "VARCHAR(255) DEFAULT 'R2aj8d4H3KwkKjkNO12FQ7B2'" },
                 { name: 'auto_send_whatsapp_invoice', type: "TINYINT(1) DEFAULT 1" },
                 { name: 'default_whatsapp_template_id', type: "INT NULL" }
             ];
@@ -164,7 +165,14 @@ function initInvoiceTables() {
                 { name: 'razorpay_payment_link_id', type: "VARCHAR(100) NULL" },
                 { name: 'razorpay_payment_url', type: "TEXT NULL" },
                 { name: 'whatsapp_message_sent', type: "TINYINT(1) DEFAULT 0" },
-                { name: 'whatsapp_sent_at', type: "DATETIME NULL" }
+                { name: 'whatsapp_sent_at', type: "DATETIME NULL" },
+                { name: 'previously_paid_amount', type: "DECIMAL(10,2) DEFAULT 0.00" },
+                { name: 'previous_payments_note', type: "TEXT NULL" },
+                { name: 'payment_method', type: "VARCHAR(50) DEFAULT NULL" },
+                { name: 'payment_note', type: "TEXT DEFAULT NULL" },
+                { name: 'payment_proof_file', type: "TEXT DEFAULT NULL" },
+                { name: 'payment_verified_by', type: "INT DEFAULT NULL" },
+                { name: 'payment_verified_at', type: "DATETIME DEFAULT NULL" }
             ];
             invCols.forEach(col => {
                 connection.query(`SHOW COLUMNS FROM crm_invoices LIKE '${col.name}'`, (cErr, cRows) => {
@@ -373,6 +381,8 @@ function renderWhatsAppTemplate(templateText, data = {}) {
         '{{booking_date}}': data.departure_date_text || data.travel_date || data.invoice_date || 'As scheduled',
         '{{pickup_drop}}': data.pickup_drop || 'Canning',
         '{{total_amount}}': Number(data.subtotal || data.total_amount || 0).toLocaleString('en-IN'),
+        '{{discount_amount}}': Number(data.discount_amount || 0).toLocaleString('en-IN'),
+        '{{discount}}': Number(data.discount_amount || 0).toLocaleString('en-IN'),
         '{{advance_amount}}': Number(data.advance_received || 0).toLocaleString('en-IN'),
         '{{due_amount}}': Number(data.total_due_amount || 0).toLocaleString('en-IN'),
         '{{advance_note}}': data.advance_note || '',
@@ -431,8 +441,9 @@ function updateInvoiceConfigModel(configData) {
             terms_conditions = '',
             invoice_prefix = 'INV-00',
             next_invoice_number = 30019,
-            razorpay_key_id = 'rzp_test_RQWjJm9q5lEiA8',
-            razorpay_key_secret = 'XwAWgPdeymk9XLHqndmSD27c',
+            razorpay_key_id = '',
+            razorpay_key_secret = '',
+            razorpay_webhook_secret = '',
             auto_send_whatsapp_invoice = 1,
             default_whatsapp_template_id = null
         } = configData;
@@ -463,6 +474,7 @@ function updateInvoiceConfigModel(configData) {
                         next_invoice_number = ?,
                         razorpay_key_id = ?,
                         razorpay_key_secret = ?,
+                        razorpay_webhook_secret = ?,
                         auto_send_whatsapp_invoice = ?,
                         default_whatsapp_template_id = ?,
                         updated_at = NOW()
@@ -490,6 +502,7 @@ function updateInvoiceConfigModel(configData) {
                     parseInt(next_invoice_number) || 30019,
                     razorpay_key_id.trim(),
                     razorpay_key_secret.trim(),
+                    razorpay_webhook_secret ? razorpay_webhook_secret.trim() : (existing.razorpay_webhook_secret || 'R2aj8d4H3KwkKjkNO12FQ7B2'),
                     auto_send_whatsapp_invoice ? 1 : 0,
                     default_whatsapp_template_id ? Number(default_whatsapp_template_id) : null,
                     existing.id
@@ -504,8 +517,8 @@ function updateInvoiceConfigModel(configData) {
                         mobile_numbers, email, website, bank_name, account_holder,
                         account_number, ifsc_code, upi_id, default_gst_percent, terms_conditions,
                         invoice_prefix, next_invoice_number, razorpay_key_id, razorpay_key_secret,
-                        auto_send_whatsapp_invoice, default_whatsapp_template_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        razorpay_webhook_secret, auto_send_whatsapp_invoice, default_whatsapp_template_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `;
 
                 connection.query(insertSql, [
@@ -529,6 +542,7 @@ function updateInvoiceConfigModel(configData) {
                     parseInt(next_invoice_number) || 30019,
                     razorpay_key_id.trim(),
                     razorpay_key_secret.trim(),
+                    razorpay_webhook_secret ? razorpay_webhook_secret.trim() : 'R2aj8d4H3KwkKjkNO12FQ7B2',
                     auto_send_whatsapp_invoice ? 1 : 0,
                     default_whatsapp_template_id ? Number(default_whatsapp_template_id) : null
                 ], (err, res) => {
@@ -712,34 +726,43 @@ function autoSettleInvoiceFromRazorpay({ paymentLinkId, paymentId, amount, invoi
         try {
             console.log(`[Auto-Settle CRM Invoice] Initiating settlement for Payment Link: ${paymentLinkId || 'N/A'}, Invoice: ${invoiceNo || 'N/A'}, Pay ID: ${paymentId || 'N/A'}`);
 
-            let querySql = '';
-            let queryParams = [];
+            const conditions = [];
+            const queryParams = [];
 
             if (paymentLinkId) {
-                querySql = `SELECT * FROM crm_invoices WHERE razorpay_payment_link_id = ? LIMIT 1`;
-                queryParams = [paymentLinkId];
-            } else if (invoiceNo) {
-                querySql = `SELECT * FROM crm_invoices WHERE invoice_no = ? LIMIT 1`;
-                queryParams = [invoiceNo];
-            } else if (notes && notes.invoice_no) {
-                querySql = `SELECT * FROM crm_invoices WHERE invoice_no = ? LIMIT 1`;
-                queryParams = [notes.invoice_no];
-            } else if (notes && notes.invoice_id) {
-                querySql = `SELECT * FROM crm_invoices WHERE id = ? LIMIT 1`;
-                queryParams = [notes.invoice_id];
-            } else {
+                conditions.push('razorpay_payment_link_id = ?');
+                queryParams.push(paymentLinkId);
+            }
+            if (invoiceNo) {
+                conditions.push('invoice_no = ?');
+                queryParams.push(invoiceNo);
+            }
+            if (notes && notes.invoice_no && notes.invoice_no !== invoiceNo) {
+                conditions.push('invoice_no = ?');
+                queryParams.push(notes.invoice_no);
+            }
+            if (notes && notes.invoice_id) {
+                conditions.push('id = ?');
+                queryParams.push(notes.invoice_id);
+            }
+
+            if (conditions.length === 0) {
                 return resolve({ success: false, msg: 'No matching payment link ID or invoice number found in payload.' });
             }
 
-            connection.query(querySql, queryParams, async (err, rows) => {
+            // Build query prioritizing exact payment link ID match first if available
+            const querySql = `SELECT * FROM crm_invoices WHERE ${conditions.join(' OR ')} ORDER BY (razorpay_payment_link_id = ?) DESC LIMIT 1`;
+            const finalParams = paymentLinkId ? [...queryParams, paymentLinkId] : [...queryParams, ''];
+
+            connection.query(querySql, finalParams, async (err, rows) => {
                 if (err) {
                     console.error('[Auto-Settle CRM Invoice Error]:', err);
                     return reject(err);
                 }
 
                 if (!rows || rows.length === 0) {
-                    console.warn(`[Auto-Settle CRM Invoice] No invoice record found matching query: ${queryParams[0]}`);
-                    return resolve({ success: false, msg: `Invoice not found for identifier: ${queryParams[0]}` });
+                    console.warn(`[Auto-Settle CRM Invoice] No invoice record found matching query conditions:`, queryParams);
+                    return resolve({ success: false, msg: `Invoice not found for identifiers: ${queryParams.join(', ')}` });
                 }
 
                 const invoice = rows[0];
@@ -750,20 +773,49 @@ function autoSettleInvoiceFromRazorpay({ paymentLinkId, paymentId, amount, invoi
                     return resolve({ success: true, already_settled: true, invoice });
                 }
 
-                // Determine amount paid (convert paise to rupees if necessary)
-                const paidAmtRupees = amount 
-                    ? (amount > 100000 ? amount / 100 : (amount >= 1 ? amount : parseFloat(invoice.total_due_amount) || 0)) 
-                    : (parseFloat(invoice.total_due_amount) || parseFloat(invoice.subtotal) || 0);
+                // Determine amount paid (convert paise to rupees accurately)
+                // In Razorpay webhooks & APIs, amounts are always passed in paise (1 INR = 100 paise)
+                let paidAmtRupees = 0;
+                if (amount !== undefined && amount !== null && Number(amount) > 0) {
+                    const amtNum = Number(amount);
+                    const invoiceDue = parseFloat(invoice.total_due_amount) || parseFloat(invoice.subtotal) || 0;
+
+                    if (amtNum >= 100 && (Math.round(amtNum / 100) === Math.round(invoiceDue) || amtNum > invoiceDue)) {
+                        paidAmtRupees = amtNum / 100;
+                    } else if (rawEvent || paymentLinkId || paymentId) {
+                        paidAmtRupees = amtNum >= 100 ? amtNum / 100 : amtNum;
+                    } else {
+                        paidAmtRupees = amtNum;
+                    }
+                } else {
+                    paidAmtRupees = parseFloat(invoice.total_due_amount) || parseFloat(invoice.subtotal) || 0;
+                }
 
                 const currentAdvance = parseFloat(invoice.advance_received) || 0;
                 const currentDue = parseFloat(invoice.total_due_amount) || 0;
+                let totalBillable = (parseFloat(invoice.subtotal) || 0) + (parseFloat(invoice.gst_amount) || 0) - (parseFloat(invoice.discount_amount) || 0) - (parseFloat(invoice.previously_paid_amount) || 0);
+                if (totalBillable <= 0) totalBillable = currentAdvance + currentDue;
 
-                const newAdvance = currentAdvance + paidAmtRupees;
-                const newDue = Math.max(0, currentDue - paidAmtRupees);
-                const newStatus = newDue <= 0 ? 'paid' : 'partial';
+                let newAdvance = 0;
+                let newDue = 0;
+                let newStatus = 'partial';
+                const wasAdvancePending = invoice.payment_status === 'advance_pending';
+
+                if (wasAdvancePending) {
+                    // Advance payment was pending; this payment settles the requested advance
+                    newAdvance = paidAmtRupees;
+                    newDue = Math.max(0, totalBillable - newAdvance);
+                    newStatus = newDue <= 0 ? 'paid' : 'partial'; // 'partial' = Advance Paid
+                } else {
+                    newAdvance = currentAdvance + paidAmtRupees;
+                    newDue = Math.max(0, currentDue - paidAmtRupees);
+                    newStatus = newDue <= 0 ? 'paid' : 'partial';
+                }
 
                 // 1. Update Invoice status & amounts in crm_invoices
-                const payNote = `Auto-settled via Razorpay Webhook (Pay ID: ${paymentId || 'N/A'}, Link ID: ${paymentLinkId || 'N/A'})`;
+                const payNote = wasAdvancePending
+                    ? `Advance payment of ₹${paidAmtRupees.toLocaleString('en-IN')} confirmed via Razorpay Webhook (Pay ID: ${paymentId || 'N/A'}, Link ID: ${paymentLinkId || 'N/A'})`
+                    : `Payment of ₹${paidAmtRupees.toLocaleString('en-IN')} confirmed via Razorpay Webhook (Pay ID: ${paymentId || 'N/A'}, Link ID: ${paymentLinkId || 'N/A'})`;
                 const updateInvoiceSql = `
                     UPDATE crm_invoices 
                     SET payment_status = ?, 
@@ -789,7 +841,7 @@ function autoSettleInvoiceFromRazorpay({ paymentLinkId, paymentId, amount, invoi
                         () => {}
                     );
 
-                    console.log(`🎉 [Auto-Settle CRM Invoice] SUCCESS: Invoice #${invoice.invoice_no} updated to '${newStatus}'! Advance: ₹${newAdvance}, Due: ₹${newDue}`);
+                    console.log(`🎉 [Auto-Settle CRM Invoice] SUCCESS: Invoice #${invoice.invoice_no} updated from '${invoice.payment_status}' to '${newStatus}'! Advance Paid: ₹${newAdvance}, Due Remaining: ₹${newDue}`);
 
                     // 2. If connected to a contact / CRM lead, update crm_lead_followups
                     if (invoice.contact_id) {
@@ -812,20 +864,20 @@ function autoSettleInvoiceFromRazorpay({ paymentLinkId, paymentId, amount, invoi
                         connection.query(
                             `INSERT INTO crm_lead_followup_logs (contact_id, followup_type, note, created_by, created_at)
                              VALUES (?, 'payment_received', ?, 1, NOW())`,
-                            [invoice.contact_id, `Auto-settled via Razorpay payment link. Status: ${newStatus}, Amount: ₹${paidAmtRupees}`],
+                            [invoice.contact_id, `Auto-settled via Razorpay payment link. Status: ${newStatus === 'partial' ? 'Advance Paid' : 'Paid in Full'}, Amount: ₹${paidAmtRupees}`],
                             () => {}
                         );
                     }
 
                     // 4. Send automated payment receipt confirmation to Customer on WhatsApp
                     try {
-                        const cleanPhone = invoice.customer_phone ? invoice.customer_phone.replace(/\\D/g, '').slice(-10) : '';
+                        const cleanPhone = invoice.customer_phone ? invoice.customer_phone.replace(/\D/g, '').slice(-10) : '';
                         if (cleanPhone) {
-                            const confMsg = `🎉 *Payment Confirmed & Settled!* \\n\\nDear *${invoice.customer_name}*,\\n\\nWe have successfully received your payment of *₹${paidAmtRupees.toLocaleString('en-IN')}* for Invoice *#${invoice.invoice_no}* via Razorpay.\\n\\n` +
+                            const confMsg = `🎉 *Payment Confirmed & Settled!* \n\nDear *${invoice.customer_name}*,\n\nWe have successfully received your ${wasAdvancePending ? 'advance ' : ''}payment of *₹${paidAmtRupees.toLocaleString('en-IN')}* for Invoice *#${invoice.invoice_no}* via Razorpay.\n\n` +
                                 (newDue <= 0 
-                                    ? `✅ *Payment Status:* FULLY PAID\\nRemaining Balance: ₹0.00\\n\\nYour Sundarban Safari reservation is now officially confirmed!` 
-                                    : `⏳ *Payment Status:* PARTIALLY PAID\\nRemaining Balance Due: ₹${newDue.toLocaleString('en-IN')}`) +
-                                `\\n\\nThank you for choosing *Delta Safari*! For any queries, feel free to reply to this message.`;
+                                    ? `✅ *Payment Status:* FULLY PAID\nRemaining Balance: ₹0.00\n\nYour Sundarban Safari reservation is now officially confirmed!` 
+                                    : `✅ *Payment Status:* ADVANCE PAID\nRemaining Balance Due: ₹${newDue.toLocaleString('en-IN')}\n(Payable to tour manager on Day 1 of tour)`) +
+                                `\n\nThank you for choosing *Delta Safari*! For any queries, feel free to reply to this message.`;
 
                             const { saveWhatsAppOutgoingMessage, upsertWhatsAppContact } = require('./whatsappModel');
                             const { sendWhatsAppCloudMessage } = require('../../helper/whatsappHelper');
@@ -867,6 +919,7 @@ function autoSettleInvoiceFromRazorpay({ paymentLinkId, paymentId, amount, invoi
  */
 function createInvoiceModel(invoiceData, adminUserId) {
     return new Promise(async (resolve, reject) => {
+        const effectiveUserId = adminUserId || invoiceData?.created_by || 1;
         const {
             invoice_no,
             invoice_date,
@@ -886,6 +939,8 @@ function createInvoiceModel(invoiceData, adminUserId) {
             gst_percent,
             gst_amount,
             discount_amount,
+            previously_paid_amount = 0,
+            previous_payments_note = null,
             advance_note,
             advance_received,
             total_due_amount,
@@ -914,33 +969,44 @@ function createInvoiceModel(invoiceData, adminUserId) {
         try {
             if (Array.isArray(items)) {
                 itemsJsonStr = JSON.stringify(items);
-                if (!extractedPackage && items.length > 0) {
-                    extractedPackage = items[0].description || '';
+                if (!extractedPackage && items.length > 0 && items[0].description) {
+                    extractedPackage = items[0].description;
                 }
             } else if (typeof items === 'string') {
                 itemsJsonStr = items;
             }
         } catch (e) {
+            console.error('Error stringifying items_json in createInvoiceModel:', e);
             itemsJsonStr = '[]';
         }
 
-        const formattedInvoiceDate = formatDateForDb(invoice_date) || new Date().toISOString().split('T')[0];
+        let formattedInvoiceDate = invoice_date;
+        if (!formattedInvoiceDate) {
+            formattedInvoiceDate = new Date().toISOString().split('T')[0];
+        }
 
-        // 1. Fetch Config for Razorpay & WhatsApp settings
+        // 1. Fetch Configuration for Razorpay & WhatsApp
         const config = await getInvoiceConfigModel();
 
-        // 2. Determine payment link payable amount (Due amount if > 0, else Advance or Subtotal)
+        // 2. Determine Initial Payment Status & Razorpay Payable Amount
         const dueVal = parseFloat(total_due_amount) || 0;
         const advVal = parseFloat(advance_received) || 0;
         const subVal = parseFloat(subtotal) || 0;
-        const payableLinkAmount = dueVal > 0 ? dueVal : (advVal > 0 ? advVal : subVal);
+        const isAdvanceRequested = advVal > 0;
+        const payableLinkAmount = isAdvanceRequested ? advVal : (dueVal > 0 ? dueVal : subVal);
+
+        const finalStatus = payment_status 
+            ? (payment_status === 'pending' && isAdvanceRequested ? 'advance_pending' : payment_status)
+            : (isAdvanceRequested ? 'advance_pending' : (dueVal <= 0 && subVal > 0 ? 'paid' : 'pending'));
 
         // 3. Generate Razorpay Payment Link
         const razorpayResult = await createRazorpayPaymentLink({
             keyId: config?.razorpay_key_id,
             keySecret: config?.razorpay_key_secret,
             amount: payableLinkAmount,
-            description: `Delta Safari Booking Invoice #${finalInvoiceNo.trim()} (${extractedPackage || 'Sundarban Tour'})`,
+            description: isAdvanceRequested
+                ? `Delta Safari Advance Payment - Invoice #${finalInvoiceNo.trim()} (${extractedPackage || 'Sundarban Tour'})`
+                : `Delta Safari Booking Invoice #${finalInvoiceNo.trim()} (${extractedPackage || 'Sundarban Tour'})`,
             customerName: customer_name.trim(),
             customerPhone: customer_phone.trim(),
             customerEmail: customer_email ? customer_email.trim() : null,
@@ -972,17 +1038,20 @@ function createInvoiceModel(invoiceData, adminUserId) {
                 gst_percent,
                 gst_amount,
                 discount_amount,
+                previously_paid_amount,
+                previous_payments_note,
                 advance_note,
                 advance_received,
                 total_due_amount,
                 payment_status,
+                payment_verified_at,
                 razorpay_payment_link_id,
                 razorpay_payment_url,
                 bank_details_text,
                 terms_text,
                 created_by,
                 created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         `;
 
         connection.query(insertSql, [
@@ -1004,15 +1073,18 @@ function createInvoiceModel(invoiceData, adminUserId) {
             parseFloat(gst_percent) || 0,
             parseFloat(gst_amount) || 0,
             parseFloat(discount_amount) || 0,
+            parseFloat(previously_paid_amount) || 0,
+            previous_payments_note ? String(previous_payments_note).trim() : null,
             advance_note ? advance_note.trim() : '',
             parseFloat(advance_received) || 0,
             parseFloat(total_due_amount) || 0,
-            payment_status || 'pending',
+            finalStatus,
+            finalStatus === 'paid' ? new Date() : null,
             paymentLinkId,
             paymentUrl,
             bank_details_text || '',
             terms_text || '',
-            adminUserId
+            effectiveUserId
         ], async (err, result) => {
             if (err) {
                 if (err.code === 'ER_DUP_ENTRY') {
@@ -1240,6 +1312,7 @@ function getInvoicesListModel({
     limit = 20,
     search = '',
     payment_status = '',
+    contact_id = null,
     from_date = '',
     to_date = ''
 } = {}) {
@@ -1247,9 +1320,14 @@ function getInvoicesListModel({
         let conditions = [];
         let params = [];
 
-        if (payment_status && ['pending', 'unpaid', 'partial', 'paid'].includes(payment_status)) {
+        if (payment_status && ['advance_pending', 'pending', 'unpaid', 'partial', 'paid'].includes(payment_status)) {
             conditions.push(`i.payment_status = ?`);
             params.push(payment_status);
+        }
+
+        if (contact_id) {
+            conditions.push(`i.contact_id = ?`);
+            params.push(Number(contact_id));
         }
 
         const fStart = formatDateForDb(from_date);
@@ -1310,6 +1388,8 @@ function getInvoicesListModel({
                     i.gst_percent,
                     i.gst_amount,
                     i.discount_amount,
+                    i.previously_paid_amount,
+                    i.previous_payments_note,
                     i.advance_note,
                     i.advance_received,
                     i.total_due_amount,
@@ -1318,17 +1398,35 @@ function getInvoicesListModel({
                     i.payment_note,
                     i.payment_proof_file,
                     i.payment_verified_by,
-                    i.payment_verified_at,
+                    DATE_FORMAT(i.payment_verified_at, '%Y-%m-%d %H:%i:%s') AS payment_verified_at,
                     CONCAT(v.first_name, ' ', COALESCE(v.last_name, '')) AS verified_by_name,
                     i.razorpay_payment_link_id,
                     i.razorpay_payment_url,
                     i.whatsapp_message_sent,
-                    i.whatsapp_sent_at,
+                    DATE_FORMAT(i.whatsapp_sent_at, '%Y-%m-%d %H:%i:%s') AS whatsapp_sent_at,
                     i.bank_details_text,
                     i.terms_text,
                     i.created_by,
-                    i.created_at,
-                    CONCAT(u.first_name, ' ', COALESCE(u.last_name, '')) AS created_by_name
+                    DATE_FORMAT(i.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
+                    CONCAT(u.first_name, ' ', COALESCE(u.last_name, '')) AS created_by_name,
+                    (
+                        SELECT COUNT(inv_c.id) 
+                        FROM crm_invoices inv_c 
+                        WHERE (i.contact_id IS NOT NULL AND inv_c.contact_id = i.contact_id) 
+                           OR (inv_c.customer_phone = i.customer_phone)
+                    ) AS contact_invoices_count,
+                    (
+                        SELECT COALESCE(SUM(
+                            CASE 
+                                WHEN inv_p.payment_status = 'paid' THEN GREATEST(0, (inv_p.subtotal + inv_p.gst_amount - inv_p.discount_amount - COALESCE(inv_p.previously_paid_amount, 0)))
+                                WHEN inv_p.payment_status = 'partial' THEN inv_p.advance_received
+                                ELSE 0 
+                            END
+                        ), 0)
+                        FROM crm_invoices inv_p 
+                        WHERE (i.contact_id IS NOT NULL AND inv_p.contact_id = i.contact_id) 
+                           OR (inv_p.customer_phone = i.customer_phone)
+                    ) AS contact_total_paid
                 FROM crm_invoices i
                 LEFT JOIN user_master u ON u.id = i.created_by
                 LEFT JOIN user_master v ON v.id = i.payment_verified_by
@@ -1347,9 +1445,29 @@ function getInvoicesListModel({
                     } catch (e) {
                         parsedItems = [];
                     }
+
+                    const sub = parseFloat(row.subtotal) || 0;
+                    const gst = parseFloat(row.gst_amount) || 0;
+                    const disc = parseFloat(row.discount_amount) || 0;
+                    const prevCredited = parseFloat(row.previously_paid_amount) || 0;
+                    const adv = parseFloat(row.advance_received) || 0;
+                    const billed = Math.max(0, sub + gst - disc);
+
+                    let paidAmt = 0;
+                    if (row.payment_status === 'paid') {
+                        paidAmt = Math.max(0, billed - prevCredited);
+                        if (paidAmt <= 0) paidAmt = adv > 0 ? adv : billed;
+                    } else if (row.payment_status === 'partial') {
+                        paidAmt = adv;
+                    }
+
+                    const paidTiming = row.payment_verified_at || (row.payment_status === 'paid' || row.payment_status === 'partial' ? row.created_at : null);
+
                     return {
                         ...row,
-                        items: parsedItems
+                        items: parsedItems,
+                        paid_amount: paidAmt,
+                        paid_timing: paidTiming
                     };
                 });
 
@@ -1430,9 +1548,10 @@ function getBillingStatsModel() {
             SELECT 
                 COUNT(id) AS total_invoices,
                 COALESCE(SUM(subtotal + gst_amount - discount_amount), 0) AS total_billed_amount,
-                COALESCE(SUM(advance_received), 0) AS total_collected_amount,
+                COALESCE(SUM(CASE WHEN payment_status IN ('partial', 'paid') THEN advance_received ELSE 0 END), 0) AS total_collected_amount,
                 COALESCE(SUM(total_due_amount), 0) AS total_due_amount,
                 SUM(CASE WHEN payment_status = 'pending' THEN 1 ELSE 0 END) AS pending_invoices,
+                SUM(CASE WHEN payment_status = 'advance_pending' THEN 1 ELSE 0 END) AS advance_pending_invoices,
                 SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) AS paid_invoices,
                 SUM(CASE WHEN payment_status = 'partial' THEN 1 ELSE 0 END) AS partial_invoices,
                 SUM(CASE WHEN payment_status = 'unpaid' THEN 1 ELSE 0 END) AS unpaid_invoices
@@ -1446,6 +1565,7 @@ function getBillingStatsModel() {
                 total_collected_amount: 0,
                 total_due_amount: 0,
                 pending_invoices: 0,
+                advance_pending_invoices: 0,
                 paid_invoices: 0,
                 partial_invoices: 0,
                 unpaid_invoices: 0
@@ -1472,12 +1592,12 @@ function updateInvoicePaymentStatusModel(invoiceId, {
                 return reject(new Error('Invoice not found.'));
             }
 
-            const validStatuses = ['pending', 'unpaid', 'partial', 'paid'];
+            const validStatuses = ['advance_pending', 'pending', 'unpaid', 'partial', 'paid'];
             const targetStatus = validStatuses.includes(payment_status) ? payment_status : 'paid';
 
             let newAdvance = parseFloat(invoice.advance_received) || 0;
             let newDue = parseFloat(invoice.total_due_amount) || 0;
-            const totalBillable = (parseFloat(invoice.subtotal) || 0) + (parseFloat(invoice.gst_amount) || 0) - (parseFloat(invoice.discount_amount) || 0);
+            const totalBillable = (parseFloat(invoice.subtotal) || 0) + (parseFloat(invoice.gst_amount) || 0) - (parseFloat(invoice.discount_amount) || 0) - (parseFloat(invoice.previously_paid_amount) || 0);
 
             let recordedAmount = 0;
             if (targetStatus === 'paid') {
@@ -1487,7 +1607,16 @@ function updateInvoicePaymentStatusModel(invoiceId, {
             } else if (targetStatus === 'partial') {
                 if (amount_paid !== null && !isNaN(parseFloat(amount_paid))) {
                     recordedAmount = Math.max(0, parseFloat(amount_paid));
-                    newAdvance = newAdvance + recordedAmount;
+                    if (invoice.payment_status === 'advance_pending') {
+                        newAdvance = recordedAmount;
+                    } else {
+                        newAdvance = newAdvance + recordedAmount;
+                    }
+                    newDue = Math.max(0, totalBillable - newAdvance);
+                }
+            } else if (targetStatus === 'advance_pending') {
+                if (amount_paid !== null && !isNaN(parseFloat(amount_paid))) {
+                    newAdvance = Math.max(0, parseFloat(amount_paid));
                     newDue = Math.max(0, totalBillable - newAdvance);
                 }
             } else if (targetStatus === 'unpaid') {
@@ -1592,6 +1721,156 @@ function getInvoicePaymentsHistoryModel(invoiceId) {
     });
 }
 
+/**
+ * Get All Invoices & Complete Payment Timings for a Lead / Contact
+ */
+function getInvoicesByContactModel(contactId, customerPhone = null) {
+    return new Promise((resolve, reject) => {
+        if (!contactId && !customerPhone) {
+            return reject(new Error('Contact ID or phone number is required.'));
+        }
+
+        let conditions = [];
+        let params = [];
+
+        if (contactId) {
+            conditions.push(`i.contact_id = ?`);
+            params.push(Number(contactId));
+        }
+        if (customerPhone) {
+            const cleanPhone = String(customerPhone).replace(/\D/g, '').slice(-10);
+            if (cleanPhone) {
+                conditions.push(`i.customer_phone LIKE ?`);
+                params.push(`%${cleanPhone}%`);
+            }
+        }
+
+        const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' OR ')}` : '';
+
+        const sql = `
+            SELECT 
+                i.id,
+                i.invoice_no,
+                DATE_FORMAT(i.invoice_date, '%Y-%m-%d') AS invoice_date,
+                i.contact_id,
+                i.customer_name,
+                i.customer_address,
+                i.customer_phone,
+                i.customer_email,
+                i.pickup_drop,
+                i.package_name,
+                i.number_of_pax,
+                i.room_required,
+                i.food_preference,
+                i.departure_date_text,
+                i.items_json,
+                i.subtotal,
+                i.gst_percent,
+                i.gst_amount,
+                i.discount_amount,
+                i.previously_paid_amount,
+                i.previous_payments_note,
+                i.advance_note,
+                i.advance_received,
+                i.total_due_amount,
+                i.payment_status,
+                i.payment_method,
+                i.payment_note,
+                i.payment_proof_file,
+                i.payment_verified_by,
+                DATE_FORMAT(i.payment_verified_at, '%Y-%m-%d %H:%i:%s') AS payment_verified_at,
+                CONCAT(v.first_name, ' ', COALESCE(v.last_name, '')) AS verified_by_name,
+                i.razorpay_payment_link_id,
+                i.razorpay_payment_url,
+                i.whatsapp_message_sent,
+                DATE_FORMAT(i.whatsapp_sent_at, '%Y-%m-%d %H:%i:%s') AS whatsapp_sent_at,
+                i.created_by,
+                DATE_FORMAT(i.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
+                CONCAT(u.first_name, ' ', COALESCE(u.last_name, '')) AS created_by_name
+            FROM crm_invoices i
+            LEFT JOIN user_master u ON u.id = i.created_by
+            LEFT JOIN user_master v ON v.id = i.payment_verified_by
+            ${whereSql}
+            ORDER BY i.id ASC
+        `;
+
+        connection.query(sql, params, (err, rows) => {
+            if (err) return reject(err);
+
+            const invoices = (rows || []).map(row => {
+                let parsedItems = [];
+                try {
+                    parsedItems = typeof row.items_json === 'string' ? JSON.parse(row.items_json) : row.items_json;
+                } catch (e) {
+                    parsedItems = [];
+                }
+                return {
+                    ...row,
+                    items: parsedItems
+                };
+            });
+
+            // Calculate aggregated financial metrics
+            let totalBilled = 0;
+            let totalPaidSoFar = 0;
+            let totalRemainingDue = 0;
+            const paidInvoicesList = [];
+
+            invoices.forEach(inv => {
+                const sub = parseFloat(inv.subtotal) || 0;
+                const gst = parseFloat(inv.gst_amount) || 0;
+                const disc = parseFloat(inv.discount_amount) || 0;
+                const billed = Math.max(0, sub + gst - disc);
+                const adv = parseFloat(inv.advance_received) || 0;
+                const due = parseFloat(inv.total_due_amount) || 0;
+
+                totalBilled += billed;
+                totalRemainingDue += due;
+
+                let paidAmount = 0;
+                if (inv.payment_status === 'paid') {
+                    const prevCredited = parseFloat(inv.previously_paid_amount) || 0;
+                    paidAmount = Math.max(0, billed - prevCredited);
+                    if (paidAmount <= 0) paidAmount = adv > 0 ? adv : billed;
+                } else if (inv.payment_status === 'partial') {
+                    paidAmount = adv;
+                }
+
+                const paidTiming = inv.payment_verified_at || (inv.payment_status === 'paid' || inv.payment_status === 'partial' ? inv.created_at : null);
+                inv.amount_paid = paidAmount;
+                inv.paid_timing = paidTiming;
+
+                if (paidAmount > 0) {
+                    totalPaidSoFar += paidAmount;
+                    paidInvoicesList.push({
+                        invoice_id: inv.id,
+                        invoice_no: inv.invoice_no,
+                        invoice_date: inv.invoice_date,
+                        package_name: inv.package_name,
+                        amount_paid: paidAmount,
+                        payment_status: inv.payment_status,
+                        payment_method: inv.payment_method || 'Online / Razorpay',
+                        paid_at: paidTiming,
+                        payment_note: inv.payment_note
+                    });
+                }
+            });
+
+            resolve({
+                invoices,
+                summary: {
+                    total_invoices: invoices.length,
+                    total_billed: totalBilled,
+                    total_paid: totalPaidSoFar,
+                    total_remaining_due: totalRemainingDue,
+                    paid_invoices_count: paidInvoicesList.length,
+                    paid_invoices: paidInvoicesList
+                }
+            });
+        });
+    });
+}
+
 module.exports = {
     initInvoiceTables,
     getInvoiceConfigModel,
@@ -1612,5 +1891,6 @@ module.exports = {
     renderWhatsAppTemplate,
     autoSettleInvoiceFromRazorpay,
     updateInvoicePaymentStatusModel,
-    getInvoicePaymentsHistoryModel
+    getInvoicePaymentsHistoryModel,
+    getInvoicesByContactModel
 };

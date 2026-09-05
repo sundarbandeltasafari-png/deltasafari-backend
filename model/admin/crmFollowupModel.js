@@ -13,6 +13,7 @@ function initCrmFollowupTables() {
             email VARCHAR(100) NULL,
             lead_type ENUM('cold', 'warm', 'hot') NOT NULL DEFAULT 'warm',
             travel_date DATE NULL,
+            booking_days INT DEFAULT 1,
             travel_destination VARCHAR(255) NULL,
             adults INT DEFAULT 1,
             children INT DEFAULT 0,
@@ -52,6 +53,7 @@ function initCrmFollowupTables() {
             note TEXT NULL,
             next_followup_date DATE NULL,
             travel_date DATE NULL,
+            booking_days INT DEFAULT 1,
             travel_destination VARCHAR(255) NULL,
             adults INT DEFAULT 1,
             children INT DEFAULT 0,
@@ -78,6 +80,7 @@ function initCrmFollowupTables() {
 
     // Run safe migrations for existing tables
     const migrations = [
+        "ALTER TABLE crm_lead_followups ADD COLUMN booking_days INT DEFAULT 1 AFTER travel_date",
         "ALTER TABLE crm_lead_followups ADD COLUMN adults INT DEFAULT 1 AFTER travel_destination",
         "ALTER TABLE crm_lead_followups ADD COLUMN children INT DEFAULT 0 AFTER adults",
         "ALTER TABLE crm_lead_followups ADD COLUMN infants INT DEFAULT 0 AFTER children",
@@ -89,13 +92,16 @@ function initCrmFollowupTables() {
         "ALTER TABLE crm_lead_followups ADD COLUMN converted_by INT NULL AFTER converted_at",
         "ALTER TABLE crm_lead_followups ADD COLUMN converted_amount VARCHAR(100) NULL AFTER converted_by",
         "ALTER TABLE crm_lead_followups ADD COLUMN conversion_note TEXT NULL AFTER converted_amount",
+        "ALTER TABLE crm_lead_followups ADD COLUMN extra_discount DECIMAL(10,2) DEFAULT 0 AFTER converted_amount",
         "ALTER TABLE crm_lead_followups ADD INDEX idx_is_converted (is_converted)",
+        "ALTER TABLE crm_lead_followup_logs ADD COLUMN booking_days INT DEFAULT 1 AFTER travel_date",
         "ALTER TABLE crm_lead_followup_logs ADD COLUMN adults INT DEFAULT 1 AFTER travel_destination",
         "ALTER TABLE crm_lead_followup_logs ADD COLUMN children INT DEFAULT 0 AFTER adults",
         "ALTER TABLE crm_lead_followup_logs ADD COLUMN infants INT DEFAULT 0 AFTER children",
         "ALTER TABLE crm_lead_followup_logs ADD COLUMN room_details LONGTEXT NULL AFTER total_rooms",
         "ALTER TABLE crm_lead_followup_logs ADD COLUMN package_name VARCHAR(255) NULL AFTER room_details",
-        "ALTER TABLE crm_lead_followup_logs ADD COLUMN package_rate VARCHAR(100) NULL AFTER package_name"
+        "ALTER TABLE crm_lead_followup_logs ADD COLUMN package_rate VARCHAR(100) NULL AFTER package_name",
+        "ALTER TABLE crm_lead_followup_logs ADD COLUMN extra_discount DECIMAL(10,2) DEFAULT 0 AFTER package_rate"
     ];
 
     migrations.forEach((migrationSql) => {
@@ -132,6 +138,7 @@ function saveLeadFollowupModel({
     email = '',
     lead_type = 'warm',
     travel_date = null,
+    booking_days = 1,
     travel_destination = '',
     adults = null,
     children = null,
@@ -161,6 +168,7 @@ function saveLeadFollowupModel({
 
         const formattedTravelDate = formatDateForDb(travel_date);
         const formattedNextFollowupDate = formatDateForDb(next_followup_date);
+        const parsedBookingDays = Math.max(1, parseInt(booking_days, 10) || 1);
 
         const parsedAdults = adults !== null && !isNaN(parseInt(adults)) ? Math.max(0, parseInt(adults)) : (parseInt(number_of_persons) || 1);
         const parsedChildren = children !== null && !isNaN(parseInt(children)) ? Math.max(0, parseInt(children)) : 0;
@@ -221,6 +229,7 @@ function saveLeadFollowupModel({
                         email = ?,
                         lead_type = ?,
                         travel_date = ?,
+                        booking_days = ?,
                         travel_destination = ?,
                         adults = ?,
                         children = ?,
@@ -243,6 +252,7 @@ function saveLeadFollowupModel({
                         email ? email.trim() : null,
                         normalizedLeadType,
                         formattedTravelDate,
+                        parsedBookingDays,
                         travel_destination ? travel_destination.trim() : '',
                         parsedAdults,
                         parsedChildren,
@@ -271,6 +281,7 @@ function saveLeadFollowupModel({
                         email,
                         lead_type,
                         travel_date,
+                        booking_days,
                         travel_destination,
                         adults,
                         children,
@@ -285,7 +296,7 @@ function saveLeadFollowupModel({
                         last_followup_at,
                         last_followup_by,
                         created_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
                 `;
                 const insertResult = await new Promise((res, rej) => {
                     connection.query(insertSql, [
@@ -295,6 +306,7 @@ function saveLeadFollowupModel({
                         email ? email.trim() : null,
                         normalizedLeadType,
                         formattedTravelDate,
+                        parsedBookingDays,
                         travel_destination ? travel_destination.trim() : '',
                         parsedAdults,
                         parsedChildren,
@@ -326,6 +338,7 @@ function saveLeadFollowupModel({
                     note,
                     next_followup_date,
                     travel_date,
+                    booking_days,
                     travel_destination,
                     adults,
                     children,
@@ -336,7 +349,7 @@ function saveLeadFollowupModel({
                     package_name,
                     package_rate,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
             `;
             await new Promise((res, rej) => {
                 connection.query(insertLogSql, [
@@ -347,6 +360,7 @@ function saveLeadFollowupModel({
                     extra_note ? extra_note.trim() : 'Follow-up updated',
                     formattedNextFollowupDate,
                     formattedTravelDate,
+                    parsedBookingDays,
                     travel_destination ? travel_destination.trim() : '',
                     parsedAdults,
                     parsedChildren,
@@ -372,6 +386,7 @@ function saveLeadFollowupModel({
                 followup_id: followupId,
                 contact_id: contact_id,
                 lead_type: normalizedLeadType,
+                booking_days: parsedBookingDays,
                 next_followup_date: formattedNextFollowupDate
             });
         } catch (error) {
@@ -386,9 +401,11 @@ function saveLeadFollowupModel({
 function markLeadConvertedModel({
     contact_id,
     converted_amount = '',
+    extra_discount = 0,
     package_name = '',
     conversion_note = '',
     travel_date = null,
+    booking_days = null,
     adults = null,
     children = null,
     infants = null,
@@ -402,7 +419,14 @@ function markLeadConvertedModel({
         if (!contact_id) return reject(new Error("Contact ID is required."));
         if (!admin_user_id) return reject(new Error("Admin User ID is required."));
 
+        let parsedDiscount = extra_discount !== null && extra_discount !== undefined && !isNaN(parseFloat(extra_discount)) ? parseFloat(extra_discount) : null;
+        if ((parsedDiscount === null || parsedDiscount === 0) && conversion_note) {
+            const m = conversion_note.match(/Discount:\s*₹?\s*(\d+(?:\.\d+)?)/i);
+            if (m) parsedDiscount = parseFloat(m[1]) || 0;
+        }
+
         const formattedTravelDate = formatDateForDb(travel_date);
+        const parsedBookingDays = booking_days !== null && !isNaN(parseInt(booking_days)) ? Math.max(1, parseInt(booking_days)) : null;
 
         const effectiveRooms = rooms || room_details;
         let serializedRooms = null;
@@ -431,7 +455,7 @@ function markLeadConvertedModel({
         try {
             // 1. Check if followup exists
             const existingFollowupRows = await new Promise((res, rej) => {
-                connection.query(`SELECT id, lead_name, phone, package_name, package_rate, travel_destination, adults, children, infants, number_of_persons, total_rooms, room_details FROM crm_lead_followups WHERE contact_id = ? LIMIT 1`, [contact_id], (err, rows) => {
+                connection.query(`SELECT id, lead_name, phone, package_name, package_rate, travel_destination, travel_date, booking_days, adults, children, infants, number_of_persons, total_rooms, room_details FROM crm_lead_followups WHERE contact_id = ? LIMIT 1`, [contact_id], (err, rows) => {
                     if (err) return rej(err);
                     res(rows || []);
                 });
@@ -451,10 +475,12 @@ function markLeadConvertedModel({
                         converted_at = NOW(),
                         converted_by = ?,
                         converted_amount = ?,
+                        extra_discount = COALESCE(?, extra_discount),
                         package_name = COALESCE(NULLIF(?, ''), package_name),
                         package_rate = COALESCE(NULLIF(?, ''), package_rate),
                         conversion_note = ?,
                         travel_date = COALESCE(?, travel_date),
+                        booking_days = COALESCE(?, booking_days),
                         adults = COALESCE(?, adults),
                         children = COALESCE(?, children),
                         infants = COALESCE(?, infants),
@@ -470,10 +496,12 @@ function markLeadConvertedModel({
                     connection.query(updateSql, [
                         admin_user_id,
                         converted_amount ? String(converted_amount).trim() : (currentFollowup.package_rate || ''),
+                        parsedDiscount,
                         package_name ? package_name.trim() : '',
                         converted_amount ? String(converted_amount).trim() : '',
                         conversion_note ? conversion_note.trim() : '',
                         formattedTravelDate,
+                        parsedBookingDays,
                         parsedAdults,
                         parsedChildren,
                         parsedInfants,
@@ -510,10 +538,12 @@ function markLeadConvertedModel({
                         converted_at,
                         converted_by,
                         converted_amount,
+                        extra_discount,
                         package_name,
                         package_rate,
                         conversion_note,
                         travel_date,
+                        booking_days,
                         adults,
                         children,
                         infants,
@@ -523,7 +553,7 @@ function markLeadConvertedModel({
                         last_followup_at,
                         last_followup_by,
                         created_by
-                    ) VALUES (?, ?, ?, 1, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
+                    ) VALUES (?, ?, ?, 1, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
                 `;
 
                 const insertRes = await new Promise((res, rej) => {
@@ -533,10 +563,12 @@ function markLeadConvertedModel({
                         contact.wa_id,
                         admin_user_id,
                         converted_amount ? String(converted_amount).trim() : '',
+                        parsedDiscount || 0,
                         package_name ? package_name.trim() : '',
                         converted_amount ? String(converted_amount).trim() : '',
                         conversion_note ? conversion_note.trim() : '',
                         formattedTravelDate,
+                        parsedBookingDays || 1,
                         parsedAdults || 1,
                         parsedChildren || 0,
                         parsedInfants || 0,
@@ -566,6 +598,7 @@ function markLeadConvertedModel({
                     package_name,
                     package_rate,
                     travel_date,
+                    booking_days,
                     travel_destination,
                     adults,
                     children,
@@ -574,7 +607,7 @@ function markLeadConvertedModel({
                     total_rooms,
                     room_details,
                     created_at
-                ) VALUES (?, ?, ?, 'converted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ) VALUES (?, ?, ?, 'converted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
             `;
 
             await new Promise((res, rej) => {
@@ -586,6 +619,7 @@ function markLeadConvertedModel({
                     package_name || currentFollowup?.package_name || '',
                     converted_amount || currentFollowup?.package_rate || '',
                     formattedTravelDate || currentFollowup?.travel_date || null,
+                    parsedBookingDays || currentFollowup?.booking_days || 1,
                     currentFollowup?.travel_destination || 'Sundarban',
                     parsedAdults !== null ? parsedAdults : (currentFollowup?.adults || 1),
                     parsedChildren !== null ? parsedChildren : (currentFollowup?.children || 0),
@@ -603,6 +637,7 @@ function markLeadConvertedModel({
                 success: true,
                 contact_id,
                 followup_id: followupId,
+                booking_days: parsedBookingDays || currentFollowup?.booking_days || 1,
                 is_converted: 1
             });
         } catch (error) {
@@ -670,6 +705,8 @@ function getFollowupsListModel({
     to_date = '',
     date_filter_type = 'next_followup', // 'next_followup' or 'travel_date' or 'last_followup' or 'converted_at'
     assigned_to = '',
+    sort_by = '',
+    sort_order = '',
     requestingUser = null
 } = {}) {
     return new Promise((resolve, reject) => {
@@ -775,6 +812,7 @@ function getFollowupsListModel({
                 f.email,
                 f.lead_type,
                 f.travel_date,
+                f.booking_days,
                 f.travel_destination,
                 f.adults,
                 f.children,
@@ -788,6 +826,7 @@ function getFollowupsListModel({
                 f.converted_at,
                 f.converted_by,
                 f.converted_amount,
+                f.extra_discount,
                 f.conversion_note,
                 f.extra_note,
                 f.next_followup_date,
@@ -819,29 +858,83 @@ function getFollowupsListModel({
                     WHERE m.contact_id = f.contact_id 
                     ORDER BY m.id DESC 
                     LIMIT 1
-                ) AS last_chat_time
+                ) AS last_chat_time,
+                (
+                    SELECT COUNT(inv.id) 
+                    FROM crm_invoices inv 
+                    WHERE inv.contact_id = f.contact_id 
+                       OR (inv.customer_phone IS NOT NULL AND inv.customer_phone != '' AND (inv.customer_phone = f.phone OR inv.customer_phone LIKE CONCAT('%', RIGHT(c.wa_id, 10))))
+                ) AS total_invoices_count,
+                (
+                    SELECT COALESCE(SUM(
+                        CASE 
+                            WHEN inv.payment_status = 'paid' THEN GREATEST(0, (inv.subtotal + inv.gst_amount - inv.discount_amount - COALESCE(inv.previously_paid_amount, 0)))
+                            WHEN inv.payment_status = 'partial' THEN inv.advance_received
+                            ELSE 0 
+                        END
+                    ), 0)
+                    FROM crm_invoices inv 
+                    WHERE inv.contact_id = f.contact_id 
+                       OR (inv.customer_phone IS NOT NULL AND inv.customer_phone != '' AND (inv.customer_phone = f.phone OR inv.customer_phone LIKE CONCAT('%', RIGHT(c.wa_id, 10))))
+                ) AS total_invoices_paid_amount,
+                (
+                    SELECT COALESCE(SUM(inv.total_due_amount), 0)
+                    FROM crm_invoices inv 
+                    WHERE inv.contact_id = f.contact_id 
+                       OR (inv.customer_phone IS NOT NULL AND inv.customer_phone != '' AND (inv.customer_phone = f.phone OR inv.customer_phone LIKE CONCAT('%', RIGHT(c.wa_id, 10))))
+                ) AS total_invoices_due_amount,
+                (
+                    SELECT DATE_FORMAT(MAX(COALESCE(inv.payment_verified_at, inv.created_at)), '%Y-%m-%d %H:%i:%s')
+                    FROM crm_invoices inv 
+                    WHERE (inv.contact_id = f.contact_id OR (inv.customer_phone IS NOT NULL AND inv.customer_phone != '' AND (inv.customer_phone = f.phone OR inv.customer_phone LIKE CONCAT('%', RIGHT(c.wa_id, 10)))))
+                      AND inv.payment_status IN ('paid', 'partial')
+                ) AS latest_payment_timing
             FROM crm_lead_followups f
             JOIN whatsapp_contacts c ON c.id = f.contact_id
             LEFT JOIN user_master u ON u.id = c.assigned_to
             LEFT JOIN user_master ub ON ub.id = f.last_followup_by
             LEFT JOIN user_master uc ON uc.id = f.converted_by
             ${whereClause}
-            ORDER BY 
-                ${isConvertedFilter ? 'f.converted_at DESC, f.last_followup_at DESC' : `CASE 
-                    WHEN f.next_followup_date = CURDATE() THEN 1
-                    WHEN f.next_followup_date < CURDATE() THEN 2
-                    WHEN f.next_followup_date > CURDATE() THEN 3
-                    ELSE 4
-                END ASC,
-                f.next_followup_date ASC,
-                f.last_followup_at DESC`}
+            ORDER BY ${(() => {
+                const orderDir = String(sort_order).toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+                if (sort_by === 'followup_date_asc' || (sort_by === 'followup_date' && orderDir === 'ASC')) {
+                    return `CASE WHEN f.next_followup_date IS NULL THEN 1 ELSE 0 END ASC, f.next_followup_date ASC, f.last_followup_at DESC, f.id DESC`;
+                } else if (sort_by === 'followup_date_desc' || (sort_by === 'followup_date' && orderDir === 'DESC')) {
+                    return `CASE WHEN f.next_followup_date IS NULL THEN 1 ELSE 0 END ASC, f.next_followup_date DESC, f.last_followup_at DESC, f.id DESC`;
+                } else if (sort_by === 'last_followup' || sort_by === 'last_followup_at') {
+                    return `CASE WHEN f.last_followup_at IS NULL THEN 1 ELSE 0 END ASC, f.last_followup_at ${orderDir}, f.id DESC`;
+                } else if (sort_by === 'travel_date') {
+                    return `CASE WHEN f.travel_date IS NULL THEN 1 ELSE 0 END ASC, f.travel_date ${orderDir}, f.id DESC`;
+                } else if (sort_by === 'created_at' || sort_by === 'newest') {
+                    return `f.created_at ${orderDir}, f.id DESC`;
+                } else if (sort_by === 'priority') {
+                    return `CASE 
+                        WHEN f.next_followup_date = CURDATE() THEN 1
+                        WHEN f.next_followup_date < CURDATE() THEN 2
+                        WHEN f.next_followup_date > CURDATE() THEN 3
+                        ELSE 4
+                    END ASC,
+                    f.next_followup_date ASC,
+                    f.last_followup_at DESC`;
+                } else {
+                    return isConvertedFilter 
+                        ? 'f.converted_at DESC, f.last_followup_at DESC' 
+                        : `CASE 
+                            WHEN f.next_followup_date = CURDATE() THEN 1
+                            WHEN f.next_followup_date < CURDATE() THEN 2
+                            WHEN f.next_followup_date > CURDATE() THEN 3
+                            ELSE 4
+                        END ASC,
+                        f.next_followup_date ASC,
+                        f.last_followup_at DESC`;
+                }
+            })()}
             LIMIT ? OFFSET ?
         `;
 
         const parsedPage = Math.max(1, parseInt(page) || 1);
-        const parsedLimit = Math.max(1, parseInt(limit) || 25);
+        const parsedLimit = Math.max(1, parseInt(limit) || 20);
         const offset = (parsedPage - 1) * parsedLimit;
-
         const queryParams = [...params, parsedLimit, offset];
 
         connection.query(sql, queryParams, (err, rows) => {
@@ -865,8 +958,15 @@ function getFollowupsListModel({
                             parsedRooms = null;
                         }
                     }
+                    let extractedDiscount = Number(row.extra_discount) || 0;
+                    if (!extractedDiscount && row.conversion_note) {
+                        const m = row.conversion_note.match(/Discount:\s*₹?\s*(\d+(?:\.\d+)?)/i);
+                        if (m) extractedDiscount = parseFloat(m[1]) || 0;
+                    }
                     return {
                         ...row,
+                        extra_discount: extractedDiscount,
+                        discount_amount: extractedDiscount,
                         adults: row.adults !== null && row.adults !== undefined ? row.adults : (row.number_of_persons || 1),
                         children: row.children || 0,
                         infants: row.infants || 0,
@@ -970,6 +1070,7 @@ function getFollowupLogsHistoryModel(contactId, requestingUser = null) {
                 l.note,
                 l.next_followup_date,
                 l.travel_date,
+                l.booking_days,
                 l.travel_destination,
                 l.adults,
                 l.children,
@@ -1001,6 +1102,7 @@ function getFollowupLogsHistoryModel(contactId, requestingUser = null) {
                 }
                 return {
                     ...log,
+                    booking_days: log.booking_days || 1,
                     adults: log.adults !== null && log.adults !== undefined ? log.adults : (log.number_of_persons || 1),
                     children: log.children || 0,
                     infants: log.infants || 0,
@@ -1079,9 +1181,17 @@ function getSingleLeadFollowupModel(contactId, requestingUser = null) {
                         parsedRooms = null;
                     }
                 }
+                let extractedDiscount = Number(followup.extra_discount) || 0;
+                if (!extractedDiscount && followup.conversion_note) {
+                    const m = followup.conversion_note.match(/Discount:\s*₹?\s*(\d+(?:\.\d+)?)/i);
+                    if (m) extractedDiscount = parseFloat(m[1]) || 0;
+                }
+                followup.extra_discount = extractedDiscount;
+                followup.discount_amount = extractedDiscount;
                 followup.adults = followup.adults !== null && followup.adults !== undefined ? followup.adults : (followup.number_of_persons || 1);
                 followup.children = followup.children || 0;
                 followup.infants = followup.infants || 0;
+                followup.booking_days = followup.booking_days || 1;
                 followup.rooms = parsedRooms;
                 followup.room_details = parsedRooms;
             }
